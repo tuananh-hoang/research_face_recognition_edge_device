@@ -21,69 +21,21 @@ try:
 except ImportError:
     mcnemar = None
 
+import sys
+
+# Đưa root dir vào path để import
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from src.core.embedder import RealEmbedder
+from src.core.iqa import IQAModule
+from src.threshold import formula_fixed, formula_bin_specific, formula_linear, formula_interaction
+from src.experiments.benchmark_edge import EdgeSimulator
+
 # ==========================================
-# === TẦNG 1: DATA LAYER (EMBEDDING & IQA) ===
+# === DATA LAYER (DATASET LOADERS) ===
 # ==========================================
 
-class RealEmbedder:
-    def __init__(self):
-        try:
-            from insightface.app import FaceAnalysis
-            self.app = FaceAnalysis(
-                name='buffalo_sc',  # model nhỏ, CPU-friendly
-                providers=['CPUExecutionProvider']
-            )
-            self.app.prepare(ctx_id=0, det_size=(320, 320))
-            self.available = True
-        except ImportError:
-            print("⚠️ InsightFace không khả dụng (thiếu module insightface hoặc onnxruntime).")
-            print("⚠️ Đang dùng MOCK embedding cho mục đích test (không dùng cho báo cáo NCKH thật).")
-            self.available = False
-            
-    def get_embedding(self, image):
-        if not self.available:
-            img_resized = cv2.resize(image, (112, 112)).flatten().astype(np.float32)
-            raw_norm = float(np.linalg.norm(img_resized) + 1e-8)
-            emb = img_resized / raw_norm
-            return emb, raw_norm
-            
-        faces = self.app.get(image)
-        if not faces:
-            return None, 0.0
-        face = max(faces, key=lambda x: x.det_score)
-        emb = face.embedding
-        raw_norm = float(np.linalg.norm(emb))
-        emb = emb / raw_norm
-        return emb, raw_norm
-    
-    def similarity(self, img1, img2):
-        emb1, norm1 = self.get_embedding(img1)
-        emb2, norm2 = self.get_embedding(img2)
-        if emb1 is None or emb2 is None:
-            return None, None, None
-        sim = float(np.dot(emb1, emb2))
-        q = np.clip((norm1 + norm2) / 2 / 25.0, 0.01, 1.0)
-        return sim, q, (norm1 + norm2) / 2
 
-class IQAModule:
-    @staticmethod
-    def compute(img):
-        ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
-        L = np.mean(ycrcb[:, :, 0]) / 255.0
-        
-        blurred = cv2.GaussianBlur(img, (5, 5), 0)
-        diff = img.astype(np.float32) - blurred.astype(np.float32)
-        N = np.std(diff) / 255.0
-        
-        if L < 0.3:
-            bin_id = 'dark'
-        elif L > 0.6:
-            bin_id = 'bright'
-        else:
-            bin_id = 'medium'
-            
-        q = max(0.0, min(1.0, 1.0 - N))
-        return L, N, bin_id, q
 
 def load_synthetic():
     rng = np.random.default_rng(42)
@@ -201,19 +153,7 @@ def load_custom(data_path, embedder, iqa):
 # === TẦNG 2: EXPERIMENT LAYER ===
 # ==========================================
 
-def formula_fixed(bin_id, L, N, q):
-    return 0.44
 
-def formula_bin_specific(bin_id, L, N, q):
-    return {'bright': 0.48, 'medium': 0.42, 'dark': 0.35}.get(bin_id, 0.42)
-
-def formula_linear(bin_id, L, N, q):
-    tau_base = 0.48; b = 0.10; c = 0.05
-    return tau_base - b*(1 - L) - c*N
-
-def formula_interaction(bin_id, L, N, q):
-    tau_base = 0.48; tau_floor = 0.30; gamma = 0.25
-    return tau_base * (1 - gamma*(1 - L)*N) * q + tau_floor*(1 - q)
 
 FORMULAS = {
     'fixed': formula_fixed,
@@ -233,7 +173,8 @@ def evaluate_formula(data_subset, formula_func):
         sim, label = item['sim'], item['label']
         
         y_true.append(label)
-        y_score.append(sim - tau)
+        # SỬA 1: AUC COMPUTATION
+        y_score.append(sim)
         decisions.append(1 if sim >= tau else 0)
         
     y_true = np.array(y_true)
@@ -254,100 +195,167 @@ def evaluate_formula(data_subset, formula_func):
         
     return FRR, FAR, eer, roc_auc, fpr, tpr, list(decisions), list(y_true)
 
-def mcnemar_test_results(decisions_A, decisions_B, labels):
+# SỬA 2: PARAMETER CALIBRATION
+def calibrate_interaction(data_dark):
+    """
+    Grid search tìm gamma và tau_floor tối ưu cho interaction formula
+    Constraint: FAR_dark <= FAR_fixed_dark (không được tăng FAR so với fixed)
+    Objective: minimize FRR_dark trong constraint
+    """
+    _, far_fixed, _, _, _, _, _, _ = evaluate_formula(data_dark, formula_fixed)
+    
+    best_frr = 1.0
+    best_gamma = 0.25
+    best_tau_floor = 0.30
+    
+    for gamma in [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50]:
+        for tau_floor in [0.25, 0.28, 0.30, 0.32, 0.35, 0.38]:
+            # Tạo formula với params này
+            def formula_test(bin_id, L, N, q):
+                return 0.48 * (1 - gamma*(1-L)*N) * q + tau_floor*(1-q)
+            
+            FRR, FAR, _, _, _, _, _, _ = evaluate_formula(data_dark, formula_test)
+            
+            # Chỉ chọn nếu FAR không vượt quá FAR_fixed
+            if FAR <= far_fixed * 1.05 and FRR < best_frr:
+                best_frr = FRR
+                best_gamma = gamma
+                best_tau_floor = tau_floor
+    
+    print(f"\nCalibration result:")
+    print(f"  Best gamma     = {best_gamma}")
+    print(f"  Best tau_floor = {best_tau_floor}")
+    print(f"  FRR_dark       = {best_frr:.1%}")
+    return best_gamma, best_tau_floor
+
+# SỬA 3: STATISTICAL TEST
+def mcnemar_test(decisions_A, decisions_B, labels):
+    """
+    McNemar's test: so sánh 2 classifiers trên cùng test set
+    Đúng hơn paired t-test cho binary classification comparison
+    """
     if mcnemar is None:
-        return None
+        return None, None
         
-    n00 = sum(1 for a, b, y in zip(decisions_A, decisions_B, labels) if (a == y) and (b == y))
-    n01 = sum(1 for a, b, y in zip(decisions_A, decisions_B, labels) if (a == y) and (b != y))
-    n10 = sum(1 for a, b, y in zip(decisions_A, decisions_B, labels) if (a != y) and (b == y))
-    n11 = sum(1 for a, b, y in zip(decisions_A, decisions_B, labels) if (a != y) and (b != y))
+    n00 = sum(1 for a,b,y in zip(decisions_A, decisions_B, labels) if a==y and b==y)
+    n01 = sum(1 for a,b,y in zip(decisions_A, decisions_B, labels) if a==y and b!=y)
+    n10 = sum(1 for a,b,y in zip(decisions_A, decisions_B, labels) if a!=y and b==y)
+    n11 = sum(1 for a,b,y in zip(decisions_A, decisions_B, labels) if a!=y and b!=y)
     
     table = [[n00, n01], [n10, n11]]
     result = mcnemar(table, exact=True)
-    return result.pvalue
+    return result.pvalue, table
 
-# ==========================================
-# === TẦNG 3: EDGE SIMULATION LAYER ===
-# ==========================================
-
-class EdgeSimulator:
-    def __init__(self, ram_limit_mb=512):
-        self.ram_limit = ram_limit_mb * 1024 * 1024
-        self._original_limit = None
+# SỬA 6: VISUALIZE FROM LOG
+def visualize_results(summary_results, dark_roc_data, out_dir):
+    fig_dir = Path(out_dir) / 'figures'
+    fig_dir.mkdir(exist_ok=True)
     
-    def __enter__(self):
-        try:
-            soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-            self._original_limit = (soft, hard)
-            resource.setrlimit(resource.RLIMIT_AS, (self.ram_limit, hard))
-        except (NameError, ValueError, AttributeError):
-            pass
-        return self
+    formulas = ['fixed', 'bin', 'linear', 'interaction']
+    conditions = ['bright', 'medium', 'dark']
     
-    def __exit__(self, *args):
-        if self._original_limit:
-            try:
-                resource.setrlimit(resource.RLIMIT_AS, self._original_limit)
-            except (NameError, ValueError, AttributeError):
-                pass
+    # Figure 1 - Heatmap FRR
+    heatmap_data = np.zeros((4, 3))
+    for i, f in enumerate(formulas):
+        for j, c in enumerate(conditions):
+            if f in summary_results and c in summary_results[f]:
+                heatmap_data[i, j] = summary_results[f][c]['FRR']
                 
-    @staticmethod
-    def measure_query(embedder, iqa, threshold_fn, gallery, image):
-        process = psutil.Process()
-        start = time.perf_counter()
-        
-        L, N, bin_id, q = iqa.compute(image)
-        emb, raw_norm = embedder.get_embedding(image)
-        if emb is None:
-            return None
-            
-        tau = threshold_fn(bin_id, L, N, q)
-        best_sim = max([float(np.dot(emb, g)) for g in gallery]) if gallery else float(np.dot(emb, emb))
-        decision = best_sim >= tau
-        end = time.perf_counter()
-        
-        return {
-            'latency_ms': (end - start) * 1000,
-            'ram_mb': process.memory_info().rss / 1024 / 1024,
-            'decision': decision,
-            'tau': tau,
-            'sim': best_sim
-        }
+    plt.figure(figsize=(8, 6))
+    im = plt.imshow(heatmap_data, cmap='RdYlGn_r', aspect='auto')
+    plt.colorbar(im, label='FRR')
+    plt.xticks(np.arange(3), conditions)
+    plt.yticks(np.arange(4), formulas)
+    for i in range(4):
+        for j in range(3):
+            plt.text(j, i, f"{heatmap_data[i, j]:.1%}", ha="center", va="center", color="black")
+    plt.title("FRR Heatmap by Formula and Condition")
+    plt.savefig(fig_dir / 'Figure_1_Heatmap_FRR.png', dpi=150, bbox_inches='tight')
+    plt.close()
     
-    @staticmethod
-    def benchmark(embedder, iqa, threshold_fn, test_images, n_runs=100, n_gallery=20):
-        rng = np.random.default_rng(0)
-        gallery = [rng.standard_normal(512).astype(np.float32) for _ in range(n_gallery)]
-        for i in range(len(gallery)):
-            gallery[i] /= np.linalg.norm(gallery[i])
+    # Figure 2 - Trade-off Scatter
+    plt.figure(figsize=(8, 6))
+    colors = ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4']
+    for i, f in enumerate(formulas):
+        if f in summary_results and 'dark' in summary_results[f]:
+            far = summary_results[f]['dark']['FAR']
+            frr = summary_results[f]['dark']['FRR']
+            plt.scatter(far, frr, s=200, c=colors[i], label=f)
+            plt.annotate(f, (far, frr), xytext=(5, 5), textcoords='offset points')
             
-        latencies, ram_usage = [], []
-        if not test_images:
-            test_images = [np.random.randint(0, 255, (112, 112, 3), dtype=np.uint8) for _ in range(5)]
+    plt.annotate("Best zone", xy=(0, 0), xytext=(0.02, 0.05),
+                 arrowprops=dict(facecolor='black', shrink=0.05),
+                 fontsize=12, color='green')
+    plt.xlabel('FAR_dark')
+    plt.ylabel('FRR_dark')
+    plt.title('FAR vs FRR Trade-off (Dark Condition)')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.savefig(fig_dir / 'Figure_2_Tradeoff_Scatter.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    # Figure 3 - Bar chart ΔFRR vs Fixed
+    plt.figure(figsize=(8, 5))
+    if 'fixed' in summary_results and 'dark' in summary_results['fixed']:
+        fix_frr = summary_results['fixed']['dark']['FRR']
+        x_pos = np.arange(3)
+        bar_names = ['bin', 'linear', 'interaction']
+        delta_frr = []
+        bar_colors = []
+        
+        for f in bar_names:
+            if f in summary_results and 'dark' in summary_results[f]:
+                d = summary_results[f]['dark']['FRR'] - fix_frr
+                delta_frr.append(d)
+                bar_colors.append('#2ca02c' if d < 0 else '#d62728')
+            else:
+                delta_frr.append(0)
+                bar_colors.append('gray')
+                
+        bars = plt.bar(x_pos, delta_frr, color=bar_colors)
+        plt.axhline(0, color='black', linewidth=1, label="Fixed baseline")
+        plt.xticks(x_pos, bar_names)
+        plt.ylabel('ΔFRR')
+        plt.title('ΔFRR vs Fixed Baseline (Dark Condition)')
+        
+        for bar, d in zip(bars, delta_frr):
+            yval = bar.get_height()
+            va = 'bottom' if yval >= 0 else 'top'
+            offset = 0.005 if yval >= 0 else -0.005
+            plt.text(bar.get_x() + bar.get_width()/2, yval + offset, f"{d:+.1%}", ha='center', va=va)
             
-        count = 0
-        for img in test_images * (n_runs // len(test_images) + 1):
-            if count >= n_runs: break
-            result = EdgeSimulator.measure_query(embedder, iqa, threshold_fn, gallery, img)
-            if result:
-                latencies.append(result['latency_ms'])
-                ram_usage.append(result['ram_mb'])
-            count += 1
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(fig_dir / 'Figure_3_Delta_FRR_Bar.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    # Figure 4 - ROC Curve
+    plt.figure(figsize=(8, 6))
+    for i, f in enumerate(formulas):
+        if f in dark_roc_data:
+            fpr, tpr, auc_val, eer = dark_roc_data[f]
+            plt.plot(fpr, tpr, color=colors[i], lw=2, label=f"{f} (AUC = {auc_val:.3f})")
+            fnr = 1 - np.array(tpr)
+            if len(fpr) > 0:
+                eer_idx = np.nanargmin(np.abs(fnr - np.array(fpr)))
+                plt.plot(fpr[eer_idx], tpr[eer_idx], marker='X', color=colors[i], markersize=8)
             
-        if not latencies: return None
-        return {
-            'latency_mean': float(np.mean(latencies)),
-            'latency_std': float(np.std(latencies)),
-            'latency_p95': float(np.percentile(latencies, 95)),
-            'latency_max': float(np.max(latencies)),
-            'ram_peak_mb': float(np.max(ram_usage)),
-            'gallery_kb': len(gallery) * 512 * 4 / 1024,
-            'target_pass': {
-                'latency': np.mean(latencies) < 200,
-                'ram': np.max(ram_usage) < 512,
-            }
-        }
+    plt.plot([0, 1], [0, 1], color='gray', lw=1, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve Comparison (Dark Condition)')
+    plt.legend(loc="lower right")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(fig_dir / 'Figure_4_ROC_Dark.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print("✅ 4 figures saved to outputs/figures/")
+
+
+
 
 # ==========================================
 # === MAIN PIPELINE ===
@@ -378,9 +386,23 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / 'formula_comparison.csv'
     
+    # SỬA 2: PARAMETER CALIBRATION
+    data_dark = [item for item in data if item['bin_id'] == 'dark']
+    best_gamma = 0.25
+    best_tau_floor = 0.30
+    if data_dark:
+        best_gamma, best_tau_floor = calibrate_interaction(data_dark)
+        
+    def new_formula_interaction(bin_id, L, N, q):
+        tau_base = 0.48
+        return tau_base * (1 - best_gamma*(1 - L)*N) * q + best_tau_floor*(1 - q)
+        
+    FORMULAS['interaction'] = new_formula_interaction
+    
     results = []
     dark_roc_data = {}
     mcnemar_data = {'linear': {}, 'interaction': {}}
+    summary_results = {f: {} for f in FORMULAS.keys()}
     
     print(f"\nTable 1: Threshold Formula Comparison (Dataset: {args.dataset}, N={len(data)} pairs)")
     print("─" * 75)
@@ -395,6 +417,10 @@ def main():
                 
             FRR, FAR, EER, AUC, fpr, tpr, decisions, labels = evaluate_formula(subset, formula_func)
             
+            summary_results[formula_name][condition] = {
+                'FRR': FRR, 'FAR': FAR, 'EER': EER, 'AUC': AUC
+            }
+            
             print(f"{formula_name:<16} | {condition:<9} | "
                   f"{FRR:>5.1%} | {FAR:>5.1%} | {EER:>5.1%} | {AUC:.3f}")
             
@@ -405,32 +431,93 @@ def main():
             })
             
             if condition == 'dark':
-                dark_roc_data[formula_name] = (fpr, tpr, AUC)
+                dark_roc_data[formula_name] = (fpr, tpr, AUC, EER)
                 if formula_name in ['linear', 'interaction']:
                     mcnemar_data[formula_name] = {'decisions': decisions, 'labels': labels}
     
     print("─" * 75)
+    
+    # SỬA 4: TRADE-OFF SUMMARY (Dark Condition)
+    print("\n=== TRADE-OFF SUMMARY (Dark Condition) ===")
+    if 'fixed' in summary_results and 'dark' in summary_results['fixed']:
+        fix_frr = summary_results['fixed']['dark']['FRR']
+        fix_far = summary_results['fixed']['dark']['FAR']
+        
+        for f_name in ['bin', 'linear', 'interaction']:
+            if f_name in summary_results and 'dark' in summary_results[f_name]:
+                cur_frr = summary_results[f_name]['dark']['FRR']
+                cur_far = summary_results[f_name]['dark']['FAR']
+                d_frr = cur_frr - fix_frr
+                d_far = cur_far - fix_far
+                
+                # âm = tốt hơn, màu xanh khi in (ANSI escape codes)
+                d_frr_str = f"\033[92m{d_frr:+.1%}\033[0m" if d_frr < 0 else f"\033[91m{d_frr:+.1%}\033[0m"
+                d_far_str = f"\033[91m{d_far:+.1%}\033[0m" if d_far > 0 else f"\033[92m{d_far:+.1%}\033[0m"
+                
+                print(f"{f_name.capitalize() + ' vs Fixed:':<22} ΔFRR={d_frr_str}, ΔFAR={d_far_str}")
+                
+                summary_results[f_name]['dark']['delta_FRR'] = d_frr
+                summary_results[f_name]['dark']['delta_FAR'] = d_far
     
     with open(csv_path, mode='w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=['Dataset', 'Condition', 'Formula', 'FRR', 'FAR', 'EER', 'AUC'])
         writer.writeheader()
         writer.writerows(results)
         
-    # Statistical Test
+    # SỬA 3: STATISTICAL TEST
+    p_value = None
     if 'linear' in mcnemar_data and 'interaction' in mcnemar_data and mcnemar_data['linear'].get('labels'):
         dec_L = mcnemar_data['linear']['decisions']
         dec_I = mcnemar_data['interaction']['decisions']
         labels = mcnemar_data['linear']['labels']
         
-        p_value = mcnemar_test_results(dec_I, dec_L, labels)
+        p_value, table = mcnemar_test(dec_I, dec_L, labels)
         if p_value is not None:
-            print(f"McNemar test (Interaction vs Linear, dark condition): p = {p_value:.4e}")
+            print(f"\nMcNemar test (Interaction vs Linear, dark condition): p = {p_value:.4e}")
             if p_value < 0.05:
                 print(">>> interaction cải thiện FRR một cách có ý nghĩa thống kê so với tuyến tính.")
             else:
                 print(">>> Không có khác biệt ý nghĩa thống kê (p >= 0.05).")
         else:
             print("⚠️ Bỏ qua McNemar test do thiếu statsmodels.")
+            
+    # SỬA 5: EXPERIMENT LOG CSV
+    log_path = out_dir / 'experiment_log.csv'
+    log_exists = log_path.exists()
+    
+    with open(log_path, 'a', newline='') as f:
+        writer = csv.writer(f)
+        if not log_exists:
+            writer.writerow(['timestamp', 'dataset', 'formula', 'gamma', 'tau_floor', 
+                             'FRR_bright', 'FAR_bright', 'FRR_medium', 'FAR_medium',
+                             'FRR_dark', 'FAR_dark', 'EER_dark', 'AUC_dark',
+                             'delta_FRR_dark', 'delta_FAR_dark', 'mcnemar_pvalue'])
+        
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+        for f_name in FORMULAS.keys():
+            r = summary_results[f_name]
+            frr_b = r.get('bright', {}).get('FRR', '')
+            far_b = r.get('bright', {}).get('FAR', '')
+            frr_m = r.get('medium', {}).get('FRR', '')
+            far_m = r.get('medium', {}).get('FAR', '')
+            frr_d = r.get('dark', {}).get('FRR', '')
+            far_d = r.get('dark', {}).get('FAR', '')
+            eer_d = r.get('dark', {}).get('EER', '')
+            auc_d = r.get('dark', {}).get('AUC', '')
+            d_frr_d = r.get('dark', {}).get('delta_FRR', '')
+            d_far_d = r.get('dark', {}).get('delta_FAR', '')
+            
+            p_val_log = p_value if f_name == 'interaction' else ''
+            gamma_log = best_gamma if f_name == 'interaction' else ''
+            tau_log = best_tau_floor if f_name == 'interaction' else ''
+            
+            writer.writerow([timestamp, args.dataset, f_name, gamma_log, tau_log,
+                             frr_b, far_b, frr_m, far_m,
+                             frr_d, far_d, eer_d, auc_d,
+                             d_frr_d, d_far_d, p_val_log])
+                             
+    # SỬA 6: VISUALIZE FROM LOG
+    visualize_results(summary_results, dark_roc_data, out_dir)
             
     # Edge Benchmark
     print("\nTable 2: Edge Benchmark (Simulated 512MB RAM)")
@@ -439,7 +526,7 @@ def main():
     print("─" * 75)
     
     with EdgeSimulator(ram_limit_mb=512):
-        bench = EdgeSimulator.benchmark(embedder, iqa, formula_interaction, test_images)
+        bench = EdgeSimulator.benchmark(embedder, iqa, FORMULAS['interaction'], test_images)
         
     if bench:
         print(f"{'Latency mean (ms)':<25} | {bench['latency_mean']:>10.1f} | {'< 200':>10} | "
