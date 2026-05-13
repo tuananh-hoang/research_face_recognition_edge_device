@@ -174,21 +174,28 @@ class SyntheticAugmentor:
         print(f"Dataset built: {stats}")
         return stats
 
-
-# ─── Sanity test ────────────────────────────────────────────────
 if __name__ == "__main__":
-    aug = SyntheticAugmentor()
+    import argparse
 
-    # Test với ảnh nhân tạo (gradient)
-    test_img = np.zeros((112, 112, 3), dtype=np.uint8)
-    for i in range(112):
-        test_img[i, :] = int(200 * i / 112)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input',  type=str, default=None)
+    parser.add_argument('--output', type=str, default=None)
+    parser.add_argument('--n',      type=int, default=5)
+    args = parser.parse_args()
 
-    variants = aug.augment(test_img, condition='dark', n_variants=3)
-    print(f"Generated {len(variants)} dark variants")
-
-    for i, v in enumerate(variants):
-        mean_lum = v.mean() / 255.0
-        print(f"  Variant {i}: mean_luminance={mean_lum:.3f}")
-
-    print("Module Augmentor OK")
+    if args.input and args.output:
+        # Chế độ build dataset thật
+        aug = SyntheticAugmentor()
+        stats = aug.build_dataset(args.input, args.output, n_per_image=args.n)
+        print(f"Done: {stats}")
+    else:
+        # Sanity test
+        aug = SyntheticAugmentor()
+        test_img = np.zeros((112, 112, 3), dtype=np.uint8)
+        for i in range(112):
+            test_img[i, :] = int(200 * i / 112)
+        variants = aug.augment(test_img, condition='dark', n_variants=3)
+        print(f"Generated {len(variants)} dark variants")
+        for i, v in enumerate(variants):
+            print(f"  Variant {i}: mean_luminance={v.mean()/255.0:.3f}")
+        print("Module Augmentor OK")
