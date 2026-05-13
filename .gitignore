@@ -1,5 +1,6 @@
 data/
-outputs/
+outputs/logs
 __pycache__/
 *.pyc
 .env
+data.zip

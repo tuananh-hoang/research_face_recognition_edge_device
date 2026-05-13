@@ -1,0 +1,63 @@
+{
+  "experiment_name": "Face Recognition Adaptive Threshold",
+  "version": "1.0.0",
+  "author": "NCKH Team",
+  "run_id": "20260513_151023",
+  "started_at": "2026-05-13T15:10:23.379650",
+  "finished_at": "2026-05-13T15:11:02.679607",
+  "duration_seconds": 39.3,
+  "log_file": "outputs/logs/20260513_151023_v1.0.0.log",
+  "data": {
+    "n_identities": 14,
+    "n_images": {
+      "bright": 104,
+      "medium": 520,
+      "dark": 520
+    },
+    "n_pairs": 2954
+  },
+  "hyperparameters": {
+    "best_gamma": 0.0
+  },
+  "results_dark": {
+    "fixed": {
+      "FRR": 0.098,
+      "FAR": 0.0151,
+      "EER": 0.0362,
+      "AUC": 0.9808
+    },
+    "bin": {
+      "FRR": 0.0392,
+      "FAR": 0.0317,
+      "EER": 0.0362,
+      "AUC": 0.9808
+    },
+    "linear": {
+      "FRR": 0.0588,
+      "FAR": 0.0166,
+      "EER": 0.0362,
+      "AUC": 0.9808
+    },
+    "interaction": {
+      "FRR": 0.0784,
+      "FAR": 0.0151,
+      "EER": 0.0362,
+      "AUC": 0.9808
+    }
+  },
+  "mcnemar": {
+    "p_value": 1.0,
+    "significant": false
+  },
+  "edge_benchmark": {
+    "latency_mean_ms": 108.6,
+    "latency_std_ms": 4.58,
+    "latency_p95_ms": 118.58,
+    "ram_max_mb": 3211.23
+  },
+  "outputs": {
+    "formula_comparison_csv": "outputs/formula_comparison.csv",
+    "experiment_log_csv": "outputs/experiment_log.csv",
+    "figures_dir": "outputs/figures"
+  }
+}
