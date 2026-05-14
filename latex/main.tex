@@ -1,0 +1,81 @@
+\documentclass[12pt, a4paper]{article}
+
+% ========== PACKAGES ==========
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{cite}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{colortbl}
+
+% ========== COLORS ==========
+\definecolor{darkblue}{RGB}{0,51,102}
+\definecolor{lightgray}{RGB}{240,240,240}
+\definecolor{goodgreen}{RGB}{0,128,0}
+\definecolor{badred}{RGB}{180,0,0}
+
+% ========== HYPERREF SETUP ==========
+\hypersetup{
+    colorlinks=true,
+    linkcolor=darkblue,
+    citecolor=darkblue,
+    urlcolor=darkblue
+}
+
+% ========== TITLE INFO ==========
+\title{
+    \textbf{\Large Ngưỡng Quyết Định Thích Nghi Theo Điều Kiện Môi Trường}\\[0.5em]
+    \textbf{\Large cho Hệ Thống Nhận Diện Khuôn Mặt trên Thiết Bị Biên}\\[1em]
+    \large Nghiên Cứu Khoa Học Cấp Trường
+}
+
+\author{
+    \begin{tabular}[t]{ccc}
+    Anh Hoang Tuan\textsuperscript{1} & Dung Dam Manh\textsuperscript{1} & Nam Vu Hoai\textsuperscript{1} \\[1.5em]
+    & Vu Hoang Long\textsuperscript{1} \quad\quad An Dinh Mai\textsuperscript{1} &
+    \end{tabular}\\[5.0em]
+    \textsuperscript{1}Khoa Công Nghệ Thông Tin, Trường Đại học Mỏ - Địa chất Hà Nội\\[0.3em]
+    \small \textit{\{anh.hoangtuan, dung.dammanh, nam.vuhoai, vu.hoanglong, an.dinhmai\}@student.humg.edu.vn}
+}
+
+\date{Tháng 5, 2026}
+
+% ========== DOCUMENT ==========
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+\input{sections/00_abstract}
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+\input{sections/01_introduction}
+\input{sections/02_related_work}
+\input{sections/03_methodology}
+\input{sections/04_experiments}
+\input{sections/05_results}
+\input{sections/06_conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

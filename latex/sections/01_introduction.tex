@@ -1,0 +1,35 @@
+\section{Đặt vấn đề}
+
+\subsection{Bối cảnh và động lực}
+
+Nhận diện khuôn mặt (\textit{face recognition}) là một trong những bài toán thị giác máy tính được nghiên cứu sâu rộng nhất trong thập kỷ qua. Các phương pháp dựa trên học sâu, tiêu biểu là ArcFace~\cite{deng2019arcface} và CosFace~\cite{wang2018cosface}, đã đạt độ chính xác vượt 99\% trên benchmark LFW~\cite{huang2008labeled} trong điều kiện phòng thí nghiệm kiểm soát. Tuy nhiên, báo cáo đánh giá FRVT của NIST~\cite{grother2019face} chỉ ra rằng khoảng cách giữa hiệu năng trên benchmark và hiệu năng triển khai thực tế (\textit{lab-to-field gap}) vẫn còn đáng kể, đặc biệt khi chất lượng ảnh đầu vào bị suy giảm do yếu tố môi trường.
+
+Một trong những bài toán triển khai phổ biến là hệ thống chấm công bằng khuôn mặt (\textit{face attendance system}) tại nhà máy và văn phòng. Trong thực tế vận hành, các hệ thống này thường gặp vấn đề nghiêm trọng ở điều kiện ca đêm hoặc hành lang thiếu sáng: tỷ lệ từ chối sai (\textit{False Rejection Rate} - FRR) tăng cao, buộc nhân viên phải quay lại chấm công thủ công và làm giảm đáng kể giá trị thực tiễn của hệ thống. Vấn đề này không chỉ ảnh hưởng đến trải nghiệm người dùng mà còn gây mất niềm tin vào tính ổn định của giải pháp AI trong môi trường sản xuất.
+
+Nguyên nhân cốt lõi nằm ở cách tiếp cận phổ biến hiện nay: hầu hết các hệ thống triển khai sử dụng \textbf{ngưỡng quyết định cố định} (\textit{fixed decision threshold}) $\tau = 0{,}44$ cho mọi điều kiện môi trường. Trong khi đó, phân bố cosine similarity giữa các cặp ảnh cùng danh tính (\textit{genuine pairs}) dịch chuyển đáng kể khi chất lượng ảnh thay đổi: ảnh chụp trong điều kiện tối có similarity trung bình thấp hơn so với điều kiện sáng bình thường, dẫn đến nhiều cặp hợp lệ bị rơi dưới ngưỡng cố định và bị từ chối sai.
+
+Xuất phát từ thực trạng trên, nghiên cứu này đặt ra giả thuyết rằng việc \textbf{điều chỉnh ngưỡng quyết định theo điều kiện môi trường} tại thời điểm suy luận (\textit{inference-time adaptive thresholding}) có thể thu hẹp khoảng cách hiệu năng giữa các điều kiện ánh sáng mà không yêu cầu huấn luyện lại mô hình trích xuất đặc trưng.
+
+\subsection{Câu hỏi nghiên cứu}
+
+Để kiểm chứng giả thuyết trên, nghiên cứu này đặt ra ba câu hỏi cụ thể, mỗi câu hỏi đi kèm tiêu chí đánh giá định lượng rõ ràng:
+
+\begin{itemize}
+    \item \textbf{H1} (\textit{Hiệu quả của ngưỡng thích nghi}): Ngưỡng quyết định thích nghi $\tau(C)$ theo điều kiện môi trường $C$ có thể giảm FRR ở điều kiện tối ít nhất 10\% (tuyệt đối) so với ngưỡng cố định, đồng thời giữ mức tăng FAR không vượt quá 2\% hay không?
+
+    \item \textbf{H2} (\textit{Ổn định khi cập nhật gallery}): Cơ chế cập nhật gallery trực tuyến không cần nhãn (\textit{unsupervised online gallery update}) có cải thiện độ chính xác ở điều kiện tối theo thời gian mà không làm suy giảm độ chính xác ở điều kiện sáng hay không?
+
+    \item \textbf{H3} (\textit{Khả năng triển khai biên}): Toàn bộ pipeline - từ tiền xử lý, trích xuất đặc trưng, đến ra quyết định - có thể chạy trên thiết bị biên sử dụng CPU với độ trễ đầu cuối (\textit{end-to-end latency}) dưới 200~ms hay không?
+\end{itemize}
+
+\subsection{Đóng góp của nghiên cứu}
+
+Bài báo này có ba đóng góp chính:
+
+\begin{enumerate}
+    \item \textbf{Khung thực nghiệm so sánh có hệ thống}: Thiết kế và thực hiện một nghiên cứu so sánh bốn dạng hàm ngưỡng quyết định - cố định, phân bin, tuyến tính, và tương tác - theo thứ tự tăng dần độ phức tạp. Toàn bộ thực nghiệm được đánh giá trên tập dữ liệu tự thu thập với embedding thực tế từ ArcFace (InsightFace \textit{buffalo\_sc}), đảm bảo tính tái lập (\textit{reproducibility}) của kết quả.
+
+    \item \textbf{Phát hiện thực nghiệm có giá trị thực tiễn}: Kết quả cho thấy ngưỡng phân bin đơn giản (\textit{bin-specific threshold}) đạt hiệu quả vượt trội so với các công thức tham số hóa phức tạp hơn trên tập dữ liệu hiện tại. Đây là một \textit{negative finding} quan trọng, gợi ý rằng với quy mô dữ liệu nhỏ, các phương pháp đơn giản có thể ổn định hơn so với các mô hình có nhiều tham số, từ đó định hướng cho việc lựa chọn chiến lược phù hợp trong triển khai thực tế.
+
+    \item \textbf{Metric đánh giá mới CP-BWT}: Đề xuất \textit{Condition-Partitioned Backward Transfer} (CP-BWT) để đo lường tính ổn định của hệ thống theo từng điều kiện ánh sáng sau khi cập nhật gallery. Khác với BWT truyền thống trong học liên tục (\textit{continual learning}) vốn đo theo task tuần tự, CP-BWT phân rã hiệu năng theo phân vùng điều kiện môi trường, phù hợp hơn cho bài toán nhận diện trong điều kiện thực tế.
+\end{enumerate}

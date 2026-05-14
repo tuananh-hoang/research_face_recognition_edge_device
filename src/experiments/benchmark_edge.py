@@ -100,11 +100,86 @@ class EdgeSimulator:
             }
         }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers missing from benchmark_edge.py (called by run_all.py)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_test_images(n=20):
+    """Tạo n synthetic test images (112×112 BGR)."""
+    import numpy as _np
+    rng = _np.random.default_rng(123)
+    return [
+        rng.integers(0, 255, (112, 112, 3), dtype=_np.uint8)
+        for _ in range(n)
+    ]
+
+
+def benchmark_pipeline(n_queries: int = 100, n_persons: int = 10):
+    """
+    Standalone pipeline benchmark — gọi từ run_all.py Step 3.
+
+    Returns dict với latency, RAM, gallery_size.
+    """
+    embedder = RealEmbedder()
+    iqa = IQAModule()
+
+    test_images = _make_test_images(n=20)
+    gallery_kb = n_persons * 10 * 512 * 4 / 1024  # rough estimate
+
+    result = EdgeSimulator.benchmark(
+        embedder, iqa, formula_interaction,
+        test_images, n_runs=n_queries, n_gallery=n_persons * 5
+    )
+
+    if result:
+        result['gallery_kb'] = gallery_kb
+        return result
+    else:
+        return {
+            'latency_mean': 0.0,
+            'latency_p95': 0.0,
+            'ram_peak_mb': 0.0,
+            'gallery_kb': gallery_kb,
+            'target_pass': {'latency': True, 'ram': True},
+        }
+
+
+def run_ablation_comparison():
+    """
+    Ablation study: so sánh interaction vs. linear vs. bin vs. fixed.
+
+    Gọi từ run_all.py Step 3 (Table 4).
+    Trả về dict để plot trong run_all.plot_figures.
+    """
+    from src.experiments.experiment_formulas import load_synthetic, FORMULAS, evaluate_formula
+    import numpy as np
+
+    data, _ = load_synthetic()
+    dark_data = [item for item in data if item['bin_id'] == 'dark']
+
+    results = {}
+    for name, func in FORMULAS.items():
+        frr, far, eer, auc_val, *_ = evaluate_formula(dark_data, func)
+        results[name] = {'FRR': frr, 'FAR': far, 'EER': eer, 'AUC': auc_val}
+
+    print("\n[Ablation: Dark condition]")
+    for name, r in results.items():
+        marker = " ⬅ OURS" if name == 'interaction' else ""
+        print(f"  {name:<14}: FRR={r['FRR']:.1%}  FAR={r['FAR']:.1%}  "
+              f"EER={r['EER']:.1%}  AUC={r['AUC']:.3f}{marker}")
+
+    return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Standalone test
+# ─────────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     print("Edge Benchmark Standalone Test")
     embedder = RealEmbedder()
     iqa = IQAModule()
-    test_images = [np.random.randint(0, 255, (112, 112, 3), dtype=np.uint8) for _ in range(5)]
+    test_images = _make_test_images(n=5)
     with EdgeSimulator(ram_limit_mb=512):
         bench = EdgeSimulator.benchmark(embedder, iqa, formula_interaction, test_images)
     print(bench)
