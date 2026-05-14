@@ -8,19 +8,21 @@ Thứ tự chạy:
   4. Edge benchmark + Ablation (Table 3 & 4)
   5. Plot figures
 """
+from __future__ import annotations
 
 import sys
 import json
 import numpy as np
 from pathlib import Path
 
-# Đảm bảo import được
-sys.path.insert(0, str(Path(__file__).parent))
+# Đảm bảo import được từ root
+_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_ROOT))
 
-from iqa import IQAModule
-from threshold import AdaptiveThreshold
-from gallery_manager import GalleryManager
-from augment import SyntheticAugmentor
+from src.core.iqa import IQAModule
+from src.threshold import AdaptiveThreshold
+from src.core.gallery_manager import GalleryManager
+from src.utils.augment import SyntheticAugmentor
 
 
 def test_modules():
@@ -79,7 +81,7 @@ def run_main_experiments():
     print("STEP 2: MAIN EXPERIMENTS")
     print("█" * 60)
 
-    from experiment import run_experiment, run_adaptation_simulation
+    from src.experiments.experiment_formulas import run_experiment, run_adaptation_simulation
 
     results_t1 = run_experiment(n_pairs_per_condition=400)
     results_t2 = run_adaptation_simulation(n_persons=10, n_days=7)
@@ -93,7 +95,7 @@ def run_benchmark():
     print("STEP 3: EDGE BENCHMARK + ABLATION")
     print("█" * 60)
 
-    from benchmark_edge import benchmark_pipeline, run_ablation_comparison
+    from src.experiments.benchmark_edge import benchmark_pipeline, run_ablation_comparison
 
     bench = benchmark_pipeline(n_queries=100, n_persons=10)
     ablation = run_ablation_comparison()
@@ -108,7 +110,7 @@ def plot_figures(results_t1, results_t2):
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
 
-        output_dir = Path(__file__).resolve().parent / 'outputs'
+        output_dir = _ROOT / 'outputs'
         output_dir.mkdir(exist_ok=True)
 
         # ─── Figure 1: IQA Distribution ────────────────────────
@@ -207,18 +209,19 @@ def plot_figures(results_t1, results_t2):
         plt.close()
         print("✅ Figure 3 saved")
 
-        # ─── Figure 4: Adaptation Curve ────────────────────────
-        day_results = results_t2['day_results']
+        # ─── Figure 4: Adaptation Curve ───────────────────────
+        day_results = results_t2.get('day_results', {})
         days = sorted(day_results.keys())
-        acc_dark = [day_results[d]['acc_dark'] for d in days]
-        acc_bright = [day_results[d]['acc_bright'] for d in days]
+        acc_dark   = [day_results[d].get('acc_dark', 0) for d in days]
+        acc_bright = [day_results[d].get('acc_bright', 0) for d in days]
 
         fig, ax = plt.subplots(figsize=(9, 5))
         ax.plot(days, acc_dark, 'b-o', linewidth=2, markersize=7, label='Acc_dark')
         ax.plot(days, acc_bright, 'g-s', linewidth=2, markersize=7, label='Acc_bright')
         ax.axvline(3.5, color='red', linestyle='--', linewidth=1.5,
                    label='Update phase starts (Day 4)')
-        ax.fill_betweenx([0, 1], 4, 7.5, alpha=0.05, color='blue', label='Update zone')
+        ax.fill_betweenx([0, 1], 4, max(days) + 0.5 if days else 7.5,
+                         alpha=0.05, color='blue', label='Update zone')
 
         ax.set_xlabel('Day')
         ax.set_ylabel('Accuracy')
@@ -244,9 +247,13 @@ def plot_figures(results_t1, results_t2):
 
 if __name__ == "__main__":
     import subprocess
-    subprocess.run(['pip', 'install', 'matplotlib', '--break-system-packages', '-q'])
+    try:
+        import matplotlib
+    except ImportError:
+        subprocess.run([sys.executable, '-m', 'pip', 'install',
+                        'matplotlib', '--break-system-packages', '-q'])
 
-    (Path(__file__).resolve().parent / 'outputs').mkdir(exist_ok=True)
+    (_ROOT / 'outputs').mkdir(exist_ok=True)
 
     # Step 1: Sanity checks
     test_modules()

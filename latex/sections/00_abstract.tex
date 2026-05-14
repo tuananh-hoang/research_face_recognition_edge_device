@@ -1,0 +1,10 @@
+
+Các hệ thống nhận diện khuôn mặt hiện đại đạt độ chính xác cao trong điều kiện phòng thí nghiệm kiểm soát, nhưng hiệu suất suy giảm đáng kể khi triển khai thực tế, đặc biệt trong điều kiện ánh sáng kém. Nguyên nhân cốt lõi là việc sử dụng ngưỡng quyết định cố định (\textit{fixed threshold}) không thích ứng được với sự biến thiên chất lượng ảnh theo môi trường.
+
+Bài báo này trình bày một nghiên cứu thực nghiệm có hệ thống nhằm so sánh bốn chiến lược ngưỡng quyết định - \textbf{cố định}, \textbf{phân bin}, \textbf{tuyến tính}, và \textbf{tương tác} - được áp dụng tại thời điểm suy luận (\textit{inference time}) dựa trên hai tín hiệu môi trường: độ sáng $L$ và độ nhiễu $N$. Thực nghiệm được tiến hành trên tập dữ liệu tự thu thập gồm \textbf{14 người dùng với 1.144 ảnh} ở ba điều kiện ánh sáng khác nhau, sử dụng ArcFace (InsightFace \textit{buffalo\_sc}) làm backbone trích xuất đặc trưng khuôn mặt.
+
+Kết quả thực nghiệm cho thấy chiến lược \textbf{ngưỡng phân bin} (\textit{bin-specific threshold}) giảm tỷ lệ từ chối sai (FRR) trong điều kiện tối từ \textbf{9,8\% xuống 3,9\%} so với ngưỡng cố định $\tau = 0{,}44$, đồng thời duy trì tỷ lệ lỗi bằng nhau EER = 3,6\%. Về hiệu năng triển khai, hệ thống đạt độ trễ trung bình \textbf{108,6 ms trên CPU thông thường}, đáp ứng yêu cầu xử lý thời gian thực dưới 200 ms.
+
+Ngoài ra, bài báo đề xuất một metric đánh giá mới - \textit{Condition-Partitioned Backward Transfer} (\textbf{CP-BWT}) - nhằm đo lường tính ổn định của hệ thống theo điều kiện ánh sáng sau khi cập nhật gallery, bổ sung vào bộ công cụ đánh giá hiện có cho các bài toán nhận diện trong điều kiện thực tế.
+
+

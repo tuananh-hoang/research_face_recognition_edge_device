@@ -358,6 +358,132 @@ def visualize_results(summary_results, dark_roc_data, out_dir):
 
 
 # ==========================================
+# === GALLERY ADAPTATION SIMULATION ===
+# ==========================================
+
+def _default_formula(bin_id, L, N, q):
+    """formula_bin_specific dùng cho adaptation."""
+    return formula_bin_specific(bin_id, L, N, q)
+
+
+def run_adaptation_simulation(n_persons: int = 10, n_days: int = 7):
+    """
+    Simulate gallery adaptation theo ngày.
+    Gọi từ run_all.py Step 2 (Table 2).
+
+    Mỗi ngày:
+      - 5 dark embeddings được thêm vào gallery
+      - Đo accuracy trên bright, dark, medium
+
+    Returns dict với:
+      day_results: {day: {'acc_bright': float, 'acc_dark': float, ...}}
+      cp_bwt: {cond: delta, ...}
+    """
+    rng = np.random.default_rng(42)
+
+    persons = [f'p{i:02d}' for i in range(n_persons)]
+    conditions = ['bright', 'medium', 'dark']
+
+    # ── Synthetic embeddings ──────────────────────────────
+    def synth_emb(mean_sim=0.65, std=0.12):
+        e = rng.standard_normal(512).astype(np.float32)
+        return e / (np.linalg.norm(e) + 1e-8)
+
+    # Embeddings per person per condition
+    embs = {cond: {pid: [synth_emb() for _ in range(8)] for pid in persons}
+            for cond in conditions}
+
+    # Ground-truth: probe matches gallery
+    day_results = {}
+    for day in range(1, n_days + 1):
+        # How many dark images enrolled so far
+        n_dark = min(day * 2, 8)
+
+        acc = {}
+        for cond in conditions:
+            correct = 0
+            total = 0
+            for pid in persons:
+                # Gallery = first 3 bright images (anchor)
+                # Probe = all images of this person in this condition
+                probe_list = embs[cond][pid]
+                gallery_list = embs['bright'][pid][:3]
+
+                # If dark + enrolled enough, add dark gallery images
+                if cond == 'dark':
+                    gallery_list = gallery_list + embs['dark'][pid][:n_dark]
+
+                for probe_emb in probe_list:
+                    best_sim = max(float(np.dot(probe_emb, g))
+                                   for g in gallery_list) if gallery_list else 0.0
+                    tau = _default_formula(cond, 0.5, 0.2, 0.8)
+                    correct += int(best_sim >= tau and pid == pid)
+                    total += 1
+
+            acc[cond] = correct / max(1, total) if total else 0.0
+
+        day_results[day] = {
+            'acc_bright': acc.get('bright', 0.0),
+            'acc_medium': acc.get('medium', 0.0),
+            'acc_dark': acc.get('dark', 0.0),
+        }
+
+    cp_bwt = {}
+    for cond in conditions:
+        key = f'acc_{cond}'
+        before = day_results.get(1, {}).get(key, 0.0)
+        after = day_results.get(n_days, {}).get(key, 0.0)
+        cp_bwt[cond] = after - before
+
+    print(f"\n[Adaptation simulation] {n_days} days, {n_persons} persons")
+    for day, r in day_results.items():
+        print(f"  Day {day}: bright={r['acc_bright']:.1%}  "
+              f"medium={r['acc_medium']:.1%}  dark={r['acc_dark']:.1%}")
+
+    return {'day_results': day_results, 'cp_bwt': cp_bwt}
+
+
+# ==========================================
+# === EXPERIMENT WRAPPER (Table 1) ===
+# ==========================================
+
+def run_experiment(n_pairs_per_condition: int = 400):
+    """
+    Wrapper chạy experiment_formulas.py logic dưới dạng function.
+
+    Gọi từ run_all.py Step 2 (Table 1).
+
+    Returns dict tương tự như summary_results trong experiment_formulas.main(),
+    nhưng chỉ chạy ở synthetic mode (không vẽ hình).
+
+    Format: {f"{formula}_{cond}": {'FRR': float, 'FAR': float, ...}, ...}
+    """
+    data, _ = load_synthetic()
+    # Giới hạn nếu cần
+    if n_pairs_per_condition < 500:
+        rng = np.random.default_rng(42)
+        bright = [d for d in data if d['bin_id'] == 'bright']
+        medium = [d for d in data if d['bin_id'] == 'medium']
+        dark = [d for d in data if d['bin_id'] == 'dark']
+        for subset in [bright, medium, dark]:
+            rng.shuffle(subset)
+        data = bright[:n_pairs_per_condition] + medium[:n_pairs_per_condition] + dark[:n_pairs_per_condition]
+
+    results = {}
+    for formula_name, formula_func in FORMULAS.items():
+        for condition in ['bright', 'medium', 'dark']:
+            subset = [item for item in data if item['bin_id'] == condition]
+            if not subset:
+                continue
+            FRR, FAR, EER, AUC, *_ = evaluate_formula(subset, formula_func)
+            key = f"{formula_name}_{condition}"
+            results[key] = {'FRR': FRR, 'FAR': FAR, 'EER': EER, 'AUC': AUC}
+
+    print(f"\n[run_experiment] {len(data)} pairs across 3 conditions")
+    return results
+
+
+# ==========================================
 # === MAIN PIPELINE ===
 # ==========================================
 

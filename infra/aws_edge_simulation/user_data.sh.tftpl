@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+LOG_DIR="/var/log/face-edge-sim"
+WORK_DIR="/opt/face-edge-sim"
+REPO_DIR="$${WORK_DIR}/repo"
+mkdir -p "$${LOG_DIR}" "$${WORK_DIR}"
+exec > >(tee -a "$${LOG_DIR}/user_data.log") 2>&1
+
+echo "Starting AWS edge-constrained simulation bootstrap"
+date -Is
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y git docker.io python3 python3-pip python3-venv awscli snapd
+systemctl enable --now docker
+
+if ! systemctl is-active --quiet snap.amazon-ssm-agent.amazon-ssm-agent.service && ! systemctl is-active --quiet amazon-ssm-agent; then
+  snap install amazon-ssm-agent --classic || true
+fi
+systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || systemctl enable --now amazon-ssm-agent || true
+
+if [ ! -d "$${REPO_DIR}/.git" ]; then
+  git clone "${repo_url}" "$${REPO_DIR}"
+fi
+
+cd "$${REPO_DIR}"
+git fetch --all
+git checkout "${repo_branch}"
+git pull --ff-only origin "${repo_branch}"
+
+if [ -n "${custom_data_s3_uri}" ]; then
+  mkdir -p "${data_dir}"
+  aws s3 sync "${custom_data_s3_uri}" "${data_dir}"
+fi
+
+chmod +x scripts/run_aws_edge_benchmark.sh
+
+export DATASET="${benchmark_dataset}"
+export DATA_DIR="${data_dir}"
+export MAX_PAIRS="${max_pairs}"
+export METHODS="${methods}"
+export FAR_BUDGETS="${far_budgets}"
+export DEFER_MARGIN="${defer_margin}"
+export CALIBRATION_SPLIT="${calibration_split}"
+export CALIBRATION_SEED="${calibration_seed}"
+export FACE_MODEL_NAME="${face_model_name}"
+export FACE_DET_SIZE="${face_det_size}"
+export ROBUST_ENHANCEMENT="${robust_enhancement}"
+export OUTPUT_ROOT="outputs/aws_edge_benchmark"
+
+echo "Benchmark config:"
+echo "  DATASET=$${DATASET}"
+echo "  DATA_DIR=$${DATA_DIR}"
+echo "  MAX_PAIRS=$${MAX_PAIRS}"
+echo "  METHODS=$${METHODS}"
+echo "  FAR_BUDGETS=$${FAR_BUDGETS}"
+echo "  DEFER_MARGIN=$${DEFER_MARGIN}"
+echo "  CALIBRATION_SPLIT=$${CALIBRATION_SPLIT}"
+echo "  CALIBRATION_SEED=$${CALIBRATION_SEED}"
+echo "  FACE_MODEL_NAME=$${FACE_MODEL_NAME}"
+echo "  FACE_DET_SIZE=$${FACE_DET_SIZE}"
+
+./scripts/run_aws_edge_benchmark.sh
+
+ARCHIVE_NAME="aws_edge_benchmark_$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+tar -czf "$${WORK_DIR}/$${ARCHIVE_NAME}" -C outputs aws_edge_benchmark
+
+if [ -n "${results_bucket}" ]; then
+  aws s3 cp "$${WORK_DIR}/$${ARCHIVE_NAME}" "s3://${results_bucket}/${results_s3_prefix}/$${ARCHIVE_NAME}"
+  aws s3 sync outputs/aws_edge_benchmark "s3://${results_bucket}/${results_s3_prefix}/latest/"
+fi
+
+echo "AWS edge-constrained simulation finished"
+date -Is
+
+if [ "${shutdown_after_run}" = "true" ]; then
+  shutdown -h +1 "Benchmark finished; instance stopping in 1 minute"
+fi
