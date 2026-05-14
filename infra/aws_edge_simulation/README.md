@@ -118,7 +118,13 @@ Then run:
 terraform apply \
   -var='benchmark_dataset=custom' \
   -var='custom_data_s3_uri=s3://<your-data-bucket>/face-data/' \
-  -var='max_pairs=300'
+  -var='methods=M0,M1,M4,M5,M6' \
+  -var='far_budgets=0.01,0.02,0.03,0.05' \
+  -var='defer_margin=0.03' \
+  -var='calibration_split=0.5' \
+  -var='calibration_seed=42' \
+  -var='max_pairs=1000' \
+  -var='shutdown_after_run=true'
 ```
 
 Custom runs require InsightFace/ONNX Runtime in the Docker image. If dependencies are missing, the benchmark should fail clearly rather than silently using mock embeddings.
@@ -132,7 +138,11 @@ repo_branch         = "conditional-pipeline"
 instance_type       = "t4g.small"
 benchmark_dataset   = "synthetic"
 max_pairs           = 1000
-methods             = "M0,M1,M2,M3,M4"
+methods             = "M0,M1,M4,M5,M6"
+far_budgets         = "0.01,0.02,0.03,0.05"
+defer_margin        = 0.03
+calibration_split   = 0.5
+calibration_seed    = 42
 face_model_name     = "mobilefacenet"
 face_det_size       = "320,320"
 shutdown_after_run  = false

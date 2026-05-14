@@ -90,7 +90,31 @@ variable "max_pairs" {
 variable "methods" {
   description = "Comma-separated method IDs for the benchmark."
   type        = string
-  default     = "M0,M1,M2,M3,M4"
+  default     = "M0,M1,M4,M5,M6"
+}
+
+variable "far_budgets" {
+  description = "Comma-separated FAR budgets for risk-constrained evaluation, e.g. 0.01,0.02,0.03,0.05."
+  type        = string
+  default     = "0.01,0.02,0.03,0.05"
+}
+
+variable "defer_margin" {
+  description = "Score margin below the accept threshold used by M6 to defer uncertain cases."
+  type        = number
+  default     = 0.03
+}
+
+variable "calibration_split" {
+  description = "Fraction of records used for calibration before evaluating risk-constrained thresholds."
+  type        = number
+  default     = 0.5
+}
+
+variable "calibration_seed" {
+  description = "Deterministic seed used for calibration/test split."
+  type        = number
+  default     = 42
 }
 
 variable "face_model_name" {

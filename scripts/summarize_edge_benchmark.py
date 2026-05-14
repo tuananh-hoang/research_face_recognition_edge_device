@@ -31,7 +31,7 @@ def read_json(path: Path) -> dict:
 def write_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -58,11 +58,20 @@ def by_method(rows: list[dict]) -> dict[str, dict]:
     return result
 
 
-def dark_condition_map(rows: list[dict]) -> dict[str, dict]:
+def by_method_budget(rows: list[dict]) -> dict[tuple[str, str], dict]:
+    result = {}
+    for row in rows:
+        method = row.get("method_name")
+        if method:
+            result[(method, str(row.get("far_budget", "")))] = row
+    return result
+
+
+def dark_condition_map(rows: list[dict]) -> dict[tuple[str, str], dict]:
     result = {}
     for row in rows:
         if row.get("condition_bin") == "dark" and row.get("method_name"):
-            result[row["method_name"]] = row
+            result[(row["method_name"], str(row.get("far_budget", "")))] = row
     return result
 
 
@@ -76,9 +85,11 @@ def first_env_summary(base_dir: Path) -> dict:
     return {}
 
 
-def build_summaries(base_dir: Path) -> tuple[list[dict], list[dict], dict]:
+def build_summaries(base_dir: Path) -> tuple[list[dict], list[dict], list[dict], list[dict], dict]:
     combined_rows: list[dict] = []
     latency_rows: list[dict] = []
+    far_budget_rows: list[dict] = []
+    calibration_rows: list[dict] = []
 
     for profile_dir in sorted(p for p in base_dir.iterdir() if p.is_dir()):
         profile = profile_dir.name
@@ -86,28 +97,38 @@ def build_summaries(base_dir: Path) -> tuple[list[dict], list[dict], dict]:
         profile_config = read_json(profile_dir / "profile_config.json")
         cpu_limit, memory_limit = profile_limits(profile, profile_config)
 
-        method_rows = by_method(read_csv(profile_dir / "summary_by_method.csv"))
-        latency_by_method = by_method(read_csv(profile_dir / "latency_summary.csv"))
+        method_rows = by_method_budget(read_csv(profile_dir / "summary_by_method.csv"))
+        latency_by_method = by_method_budget(read_csv(profile_dir / "latency_summary.csv"))
         dark_rows = dark_condition_map(read_csv(profile_dir / "summary_by_condition.csv"))
+        n_pairs = config.get("n_test_pairs", config.get("n_pairs", ""))
 
-        for method_name, method_row in method_rows.items():
-            latency_row = latency_by_method.get(method_name, {})
-            dark_row = dark_rows.get(method_name, {})
+        for (method_name, far_budget), method_row in method_rows.items():
+            latency_row = latency_by_method.get((method_name, far_budget), {})
+            dark_row = dark_rows.get((method_name, far_budget), {})
             row = {
                 "profile": profile,
                 "cpu_limit": cpu_limit,
                 "memory_limit": memory_limit,
                 "dataset": config.get("dataset", ""),
-                "n_pairs": config.get("n_pairs", ""),
+                "n_pairs": n_pairs,
                 "method_name": method_name,
+                "far_budget": far_budget,
                 "FRR": method_row.get("FRR", ""),
                 "FAR": method_row.get("FAR", ""),
+                "FRR_active": method_row.get("FRR_active", method_row.get("FRR", "")),
+                "FAR_active": method_row.get("FAR_active", method_row.get("FAR", "")),
+                "FRR_with_defer_as_failure_for_genuine": method_row.get(
+                    "FRR_with_defer_as_failure_for_genuine", ""
+                ),
                 "FRR_dark": dark_row.get("FRR", ""),
                 "FAR_dark": dark_row.get("FAR", ""),
+                "FRR_dark_active": dark_row.get("FRR_active", dark_row.get("FRR", "")),
+                "FAR_dark_active": dark_row.get("FAR_active", dark_row.get("FAR", "")),
                 "latency_mean": latency_row.get("latency_mean", method_row.get("latency_mean", "")),
                 "latency_p95": latency_row.get("latency_p95", method_row.get("latency_p95", "")),
                 "ram_peak_mb": latency_row.get("ram_peak_mb", method_row.get("ram_peak_mb", "")),
                 "defer_rate": latency_row.get("defer_rate", method_row.get("defer_rate", "")),
+                "automation_rate": method_row.get("automation_rate", latency_row.get("automation_rate", "")),
                 "robust_path_rate": latency_row.get(
                     "robust_path_rate",
                     method_row.get("robust_path_rate", ""),
@@ -121,16 +142,42 @@ def build_summaries(base_dir: Path) -> tuple[list[dict], list[dict], dict]:
                     "cpu_limit": cpu_limit,
                     "memory_limit": memory_limit,
                     "method_name": method_name,
+                    "far_budget": far_budget,
                     "latency_mean": row["latency_mean"],
                     "latency_p95": row["latency_p95"],
                     "ram_peak_mb": row["ram_peak_mb"],
                     "defer_rate": row["defer_rate"],
+                    "automation_rate": row["automation_rate"],
                     "robust_path_rate": row["robust_path_rate"],
                     "fast_path_rate": row["fast_path_rate"],
                 }
             )
 
-    return combined_rows, latency_rows, first_env_summary(base_dir)
+        for row in read_csv(profile_dir / "summary_by_far_budget.csv"):
+            far_budget_rows.append(
+                {
+                    "profile": profile,
+                    "cpu_limit": cpu_limit,
+                    "memory_limit": memory_limit,
+                    "dataset": config.get("dataset", ""),
+                    "n_pairs": n_pairs,
+                    **row,
+                }
+            )
+
+        for row in read_csv(profile_dir / "calibration_thresholds.csv"):
+            calibration_rows.append(
+                {
+                    "profile": profile,
+                    "cpu_limit": cpu_limit,
+                    "memory_limit": memory_limit,
+                    "dataset": config.get("dataset", ""),
+                    "n_calibration_pairs": config.get("n_calibration_pairs", ""),
+                    **row,
+                }
+            )
+
+    return combined_rows, latency_rows, far_budget_rows, calibration_rows, first_env_summary(base_dir)
 
 
 def markdown_table(rows: list[dict], columns: list[str]) -> str:
@@ -145,7 +192,12 @@ def markdown_table(rows: list[dict], columns: list[str]) -> str:
     return "\n".join(lines)
 
 
-def write_report(base_dir: Path, combined_rows: list[dict], env: dict) -> None:
+def write_report(
+    base_dir: Path,
+    combined_rows: list[dict],
+    far_budget_rows: list[dict],
+    env: dict,
+) -> None:
     profiles = []
     seen = set()
     for row in combined_rows:
@@ -180,6 +232,27 @@ def write_report(base_dir: Path, combined_rows: list[dict], env: dict) -> None:
         f"- Container memory limit MB: {env.get('container_memory_limit', {}).get('mb')}",
         f"- Container CPU quota: {env.get('container_cpu_quota', {}).get('cpus')}",
         "",
+        "## Risk-Constrained Results",
+        "",
+        "Thresholds are calibrated under FAR budgets. The goal is to reduce FRR at the same FAR constraint.",
+        "Deferred samples are reported explicitly and are not hidden.",
+        "",
+        markdown_table(
+            [row for row in far_budget_rows if row.get("condition_bin") == "dark"],
+            [
+                "profile",
+                "method_name",
+                "far_budget",
+                "FAR_active",
+                "FRR_active",
+                "FRR_with_defer_as_failure_for_genuine",
+                "defer_rate",
+                "automation_rate",
+                "latency_p95",
+                "ram_peak_mb",
+            ],
+        ),
+        "",
         "## Per-Method Results",
         "",
         markdown_table(
@@ -187,6 +260,7 @@ def write_report(base_dir: Path, combined_rows: list[dict], env: dict) -> None:
             [
                 "profile",
                 "method_name",
+                "far_budget",
                 "FRR",
                 "FAR",
                 "FRR_dark",
@@ -200,9 +274,10 @@ def write_report(base_dir: Path, combined_rows: list[dict], env: dict) -> None:
         "",
         "## Interpretation Template",
         "",
-        "- Compare M4 against M1 to estimate whether conditional path selection plus path-specific thresholds improves low-light FRR/FAR.",
-        "- Compare M4 against M2 to estimate whether conditional execution reduces latency or unnecessary robust-path usage.",
-        "- Check defer_rate before interpreting FRR/FAR; deferring low-quality samples is a different behavior from accepting or rejecting.",
+        "- Primary claim: compare FRR_dark at the same allowed FAR budget alpha.",
+        "- Check actual FAR_active before interpreting FRR_active.",
+        "- Report defer_rate and automation_rate together; deferring difficult samples is not the same as correctly recognizing them.",
+        "- Compare latency_p95 and ram_peak_mb across AWS edge-constrained profiles.",
         "- Report all results as AWS edge-constrained simulation results, not as physical edge-board measurements.",
         "",
         "## Warning",
@@ -221,7 +296,7 @@ def main() -> None:
     base_dir = Path(args.input_dir)
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    combined_rows, latency_rows, env = build_summaries(base_dir)
+    combined_rows, latency_rows, far_budget_rows, calibration_rows, env = build_summaries(base_dir)
     combined_fields = [
         "profile",
         "cpu_limit",
@@ -229,14 +304,21 @@ def main() -> None:
         "dataset",
         "n_pairs",
         "method_name",
+        "far_budget",
         "FRR",
         "FAR",
+        "FRR_active",
+        "FAR_active",
+        "FRR_with_defer_as_failure_for_genuine",
         "FRR_dark",
         "FAR_dark",
+        "FRR_dark_active",
+        "FAR_dark_active",
         "latency_mean",
         "latency_p95",
         "ram_peak_mb",
         "defer_rate",
+        "automation_rate",
         "robust_path_rate",
         "fast_path_rate",
     ]
@@ -245,22 +327,63 @@ def main() -> None:
         "cpu_limit",
         "memory_limit",
         "method_name",
+        "far_budget",
         "latency_mean",
         "latency_p95",
         "ram_peak_mb",
         "defer_rate",
+        "automation_rate",
         "robust_path_rate",
         "fast_path_rate",
+    ]
+    far_budget_fields = [
+        "profile",
+        "cpu_limit",
+        "memory_limit",
+        "dataset",
+        "n_pairs",
+        "method_name",
+        "far_budget",
+        "condition_bin",
+        "FRR_active",
+        "FAR_active",
+        "FRR_with_defer_as_failure_for_genuine",
+        "defer_rate",
+        "automation_rate",
+        "latency_mean",
+        "latency_p95",
+        "ram_peak_mb",
+    ]
+    calibration_fields = [
+        "profile",
+        "cpu_limit",
+        "memory_limit",
+        "dataset",
+        "n_calibration_pairs",
+        "method_name",
+        "far_budget",
+        "condition_bin",
+        "threshold_accept",
+        "threshold_reject",
+        "n_calibration_genuine",
+        "n_calibration_impostor",
+        "calibration_FAR",
+        "calibration_FRR",
+        "used_global_fallback",
     ]
 
     write_csv(base_dir / "combined_edge_summary.csv", combined_rows, combined_fields)
     write_csv(base_dir / "combined_latency_summary.csv", latency_rows, latency_fields)
-    write_report(base_dir, combined_rows, env)
+    write_csv(base_dir / "combined_far_budget_summary.csv", far_budget_rows, far_budget_fields)
+    write_csv(base_dir / "combined_calibration_thresholds.csv", calibration_rows, calibration_fields)
+    write_report(base_dir, combined_rows, far_budget_rows, env)
 
     print(f"Profiles summarized: {len(set(row['profile'] for row in combined_rows))}")
     print(f"Rows summarized: {len(combined_rows)}")
     print(f"Saved: {base_dir / 'combined_edge_summary.csv'}")
     print(f"Saved: {base_dir / 'combined_latency_summary.csv'}")
+    print(f"Saved: {base_dir / 'combined_far_budget_summary.csv'}")
+    print(f"Saved: {base_dir / 'combined_calibration_thresholds.csv'}")
     print(f"Saved: {base_dir / 'edge_benchmark_report.md'}")
 
 

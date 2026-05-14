@@ -223,6 +223,10 @@ resource "aws_instance" "runner" {
     custom_data_s3_uri = var.custom_data_s3_uri
     max_pairs          = var.max_pairs
     methods            = var.methods
+    far_budgets        = var.far_budgets
+    defer_margin       = var.defer_margin
+    calibration_split  = var.calibration_split
+    calibration_seed   = var.calibration_seed
     face_model_name    = var.face_model_name
     face_det_size      = var.face_det_size
     robust_enhancement = var.robust_enhancement

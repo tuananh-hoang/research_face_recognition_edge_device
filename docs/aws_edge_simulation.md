@@ -2,7 +2,7 @@
 
 This benchmark runs the conditional face-recognition experiment in Docker with CPU and RAM limits. The correct wording is **AWS edge-constrained simulation**.
 
-Do not report these numbers as measurements from a physical Raspberry Pi board. AWS t4g.small is ARM-based, but it is separate hardware. Docker limits provide a reproducible constrained environment for comparing M0-M4/M5 methods.
+Do not report these numbers as measurements from a physical Raspberry Pi board. AWS t4g.small is ARM-based, but it is separate hardware. Docker limits provide a reproducible constrained environment for comparing risk-constrained decision methods.
 
 ## AWS EC2 Setup
 
@@ -58,13 +58,24 @@ python scripts/run_conditional_experiment.py \
   --dataset synthetic \
   --max-pairs 1000 \
   --output-dir outputs/aws_edge_benchmark/<profile> \
-  --methods M0,M1,M2,M3,M4
+  --methods M0,M1,M4,M5,M6 \
+  --far-budgets 0.01,0.02,0.03,0.05 \
+  --defer-margin 0.03 \
+  --calibration-split 0.5 \
+  --calibration-seed 42
 ```
 
 ## Custom Data Run
 
 ```bash
-DATASET=custom DATA_DIR=data MAX_PAIRS=300 METHODS=M0,M1,M2,M3,M4 FACE_MODEL_NAME=mobilefacenet ./scripts/run_aws_edge_benchmark.sh
+METHODS=M0,M1,M4,M5,M6 \
+FAR_BUDGETS=0.01,0.02,0.03,0.05 \
+DEFER_MARGIN=0.03 \
+MAX_PAIRS=1000 \
+DATASET=custom \
+DATA_DIR=data \
+FACE_MODEL_NAME=mobilefacenet \
+./scripts/run_aws_edge_benchmark.sh
 ```
 
 For custom data, InsightFace and ONNX Runtime must be available in the container. If they are missing, the custom benchmark should fail clearly instead of silently using mock embeddings. Synthetic runs are useful for smoke testing only.
@@ -79,6 +90,8 @@ outputs/aws_edge_benchmark/
     per_sample_log.csv
     summary_by_method.csv
     summary_by_condition.csv
+    summary_by_far_budget.csv
+    calibration_thresholds.csv
     latency_summary.csv
     config_used.json
     aws_edge_env.json
@@ -90,6 +103,8 @@ outputs/aws_edge_benchmark/
     ...
   combined_edge_summary.csv
   combined_latency_summary.csv
+  combined_far_budget_summary.csv
+  combined_calibration_thresholds.csv
   edge_benchmark_report.md
 ```
 
@@ -97,10 +112,18 @@ outputs/aws_edge_benchmark/
 
 Use the benchmark to compare:
 
-- M4 vs M1: whether conditional path selection plus path-specific thresholds improves the low-light trade-off.
-- M4 vs M2: whether conditional execution avoids always paying robust-path latency.
-- defer_rate: whether the method is refusing poor inputs instead of forcing unsafe decisions.
-- ram_peak_mb: whether memory stays inside the simulated edge budget.
+- `FRR_dark @ FAR <= alpha`: whether a method reduces low-light false rejection at the same accepted false-accept risk.
+- `actual FAR_active`: whether the reported run respects the FAR budget on active decisions.
+- `defer_rate` and `automation_rate`: whether the method is pushing too many samples to verification.
+- `latency_p95` and `ram_peak_mb`: whether runtime and memory stay inside the simulated edge budget.
+
+Write:
+
+```text
+Thresholds are calibrated under FAR budgets.
+The goal is to reduce FRR at the same FAR constraint.
+Deferred samples are reported explicitly and are not hidden.
+```
 
 Report the result as:
 

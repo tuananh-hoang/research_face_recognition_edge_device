@@ -5,7 +5,11 @@ IMAGE_NAME="${IMAGE_NAME:-face-edge}"
 DATASET="${DATASET:-synthetic}"
 DATA_DIR="${DATA_DIR:-data}"
 MAX_PAIRS="${MAX_PAIRS:-1000}"
-METHODS="${METHODS:-M0,M1,M2,M3,M4}"
+METHODS="${METHODS:-M0,M1,M4,M5,M6}"
+FAR_BUDGETS="${FAR_BUDGETS:-0.01,0.02,0.03,0.05}"
+DEFER_MARGIN="${DEFER_MARGIN:-0.03}"
+CALIBRATION_SPLIT="${CALIBRATION_SPLIT:-0.5}"
+CALIBRATION_SEED="${CALIBRATION_SEED:-42}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-outputs/aws_edge_benchmark}"
 ROBUST_ENHANCEMENT="${ROBUST_ENHANCEMENT:-clahe}"
 FACE_MODEL_NAME="${FACE_MODEL_NAME:-mobilefacenet}"
@@ -39,6 +43,10 @@ for profile_spec in "${profiles[@]}"; do
   "data_dir": "${DATA_DIR}",
   "max_pairs": "${MAX_PAIRS}",
   "methods": "${METHODS}",
+  "far_budgets": "${FAR_BUDGETS}",
+  "defer_margin": "${DEFER_MARGIN}",
+  "calibration_split": "${CALIBRATION_SPLIT}",
+  "calibration_seed": "${CALIBRATION_SEED}",
   "face_model_name": "${FACE_MODEL_NAME}",
   "face_det_size": "${FACE_DET_SIZE}",
   "benchmark_type": "edge-constrained simulation"
@@ -65,6 +73,10 @@ EOF
         --data-dir '${DATA_DIR}' \
         --max-pairs '${MAX_PAIRS}' \
         --methods '${METHODS}' \
+        --far-budgets '${FAR_BUDGETS}' \
+        --defer-margin '${DEFER_MARGIN}' \
+        --calibration-split '${CALIBRATION_SPLIT}' \
+        --calibration-seed '${CALIBRATION_SEED}' \
         --face-model '${FACE_MODEL_NAME}' \
         --face-det-size '${FACE_DET_SIZE}' \
         --robust-enhancement '${ROBUST_ENHANCEMENT}' \

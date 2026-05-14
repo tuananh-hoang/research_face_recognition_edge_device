@@ -89,12 +89,21 @@ class ConditionalEvaluator:
         }
 
         if context_error:
-            return self._deferred_row(base_row, start, reason=context_error)
+            return self._deferred_row(
+                base_row,
+                start,
+                reason=context_error,
+                threshold_policy=method.threshold_policy,
+            )
 
         if selected_path == DEFER:
-            return self._deferred_row(base_row, start, reason="policy_defer")
+            return self._deferred_row(
+                base_row,
+                start,
+                reason="policy_defer",
+                threshold_policy=method.threshold_policy,
+            )
 
-        threshold = float(method.threshold_policy.get_threshold(context, selected_path))
         if selected_path == ROBUST:
             enhancement_type = self.robust_enhancement
 
@@ -103,9 +112,19 @@ class ConditionalEvaluator:
             latency_ms = self.synthetic_latency_ms.get(selected_path, 2.0)
         else:
             if self.embedder is None:
-                return self._deferred_row(base_row, start, reason="missing_embedder")
+                return self._deferred_row(
+                    base_row,
+                    start,
+                    reason="missing_embedder",
+                    threshold_policy=method.threshold_policy,
+                )
             if img1 is None or img2 is None:
-                return self._deferred_row(base_row, start, reason="missing_image")
+                return self._deferred_row(
+                    base_row,
+                    start,
+                    reason="missing_image",
+                    threshold_policy=method.threshold_policy,
+                )
 
             processor = path_for_name(selected_path, self.robust_enhancement)
             enhancement_type = processor.enhancement_type
@@ -117,23 +136,25 @@ class ConditionalEvaluator:
             if emb1 is None or emb2 is None:
                 row = dict(base_row)
                 row["enhancement_type"] = enhancement_type
-                return self._deferred_row(row, start, reason="face_not_detected")
+                return self._deferred_row(
+                    row,
+                    start,
+                    reason="face_not_detected",
+                    threshold_policy=method.threshold_policy,
+                )
 
             sim = float(np.dot(emb1, emb2))
             latency_ms = (time.perf_counter() - start) * 1000.0
 
-        decision = int(sim >= threshold)
+        decision_info = self._decision_info(method.threshold_policy, context, selected_path, sim)
         row = dict(base_row)
         row.update(
             {
                 "enhancement_type": enhancement_type,
                 "similarity_score": float(sim),
-                "threshold": threshold,
-                "decision": decision,
+                **decision_info,
                 "latency_ms": float(latency_ms),
                 "ram_mb": self._rss_mb(),
-                "deferred": False,
-                "defer_reason": "",
             }
         )
         return row
@@ -189,7 +210,38 @@ class ConditionalEvaluator:
                 sim += self.synthetic_robust_delta * 0.25 if record.label == 1 else 0.0
         return float(np.clip(sim, -1.0, 1.0))
 
-    def _deferred_row(self, base_row: dict, start: float, reason: str) -> dict:
+    def _decision_info(self, threshold_policy: object, context: dict, selected_path: str, sim: float) -> dict:
+        if hasattr(threshold_policy, "decide"):
+            info = dict(threshold_policy.decide(context, selected_path, sim))
+            info.setdefault("threshold", info.get("threshold_accept", ""))
+            info.setdefault("threshold_accept", info.get("threshold", ""))
+            info.setdefault("threshold_reject", "")
+            info.setdefault("far_budget", getattr(threshold_policy, "far_budget", ""))
+            info.setdefault("defer_margin", getattr(threshold_policy, "defer_margin", ""))
+            info.setdefault("deferred", info.get("decision") == "defer")
+            info.setdefault("defer_reason", "uncertain_score" if info.get("deferred") else "")
+            return info
+
+        threshold = float(threshold_policy.get_threshold(context, selected_path))
+        decision = "accept" if sim >= threshold else "reject"
+        return {
+            "threshold": threshold,
+            "threshold_accept": threshold,
+            "threshold_reject": "",
+            "far_budget": "",
+            "defer_margin": "",
+            "decision": decision,
+            "deferred": False,
+            "defer_reason": "",
+        }
+
+    def _deferred_row(
+        self,
+        base_row: dict,
+        start: float,
+        reason: str,
+        threshold_policy: object | None = None,
+    ) -> dict:
         row = dict(base_row)
         path = row.get("selected_path", DEFER)
         latency_ms = self.synthetic_latency_ms.get(path, 0.3)
@@ -201,6 +253,10 @@ class ConditionalEvaluator:
             {
                 "similarity_score": "",
                 "threshold": "",
+                "threshold_accept": "",
+                "threshold_reject": "",
+                "far_budget": getattr(threshold_policy, "far_budget", ""),
+                "defer_margin": getattr(threshold_policy, "defer_margin", ""),
                 "decision": "defer",
                 "latency_ms": float(measured),
                 "ram_mb": self._rss_mb(),
