@@ -13,6 +13,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -U pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY src ./src
+COPY scripts/run_conditional_experiment.py scripts/run_conditional_experiment.py
+COPY scripts/check_aws_edge_env.py scripts/check_aws_edge_env.py
 
 CMD ["python", "scripts/run_conditional_experiment.py", "--dataset", "synthetic", "--max-pairs", "200", "--output-dir", "outputs/docker_edge_default"]
