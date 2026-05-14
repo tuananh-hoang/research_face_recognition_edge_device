@@ -12,6 +12,11 @@ import numpy as np
 from .paths import DEFER, ROBUST, path_for_name
 from .quality import compute_context
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 
 @dataclass(frozen=True)
 class PairRecord:
@@ -54,6 +59,7 @@ class ConditionalEvaluator:
             "defer": 0.3,
         }
         self.synthetic_robust_delta = float(synthetic_robust_delta)
+        self._process = psutil.Process() if psutil is not None else None
 
     def evaluate(self, records: list[PairRecord], methods: list[MethodConfig]) -> list[dict]:
         rows: list[dict] = []
@@ -79,6 +85,7 @@ class ConditionalEvaluator:
             "noise_N": float(context.get("N", 0.0)),
             "det_score_q": float(context.get("q", 0.0)),
             "condition_bin": str(context.get("bin_id", "medium")),
+            "ram_mb": self._rss_mb(),
         }
 
         if context_error:
@@ -124,6 +131,7 @@ class ConditionalEvaluator:
                 "threshold": threshold,
                 "decision": decision,
                 "latency_ms": float(latency_ms),
+                "ram_mb": self._rss_mb(),
                 "deferred": False,
                 "defer_reason": "",
             }
@@ -195,8 +203,17 @@ class ConditionalEvaluator:
                 "threshold": "",
                 "decision": "defer",
                 "latency_ms": float(measured),
+                "ram_mb": self._rss_mb(),
                 "deferred": True,
                 "defer_reason": reason,
             }
         )
         return row
+
+    def _rss_mb(self) -> float:
+        if self._process is None:
+            return 0.0
+        try:
+            return float(self._process.memory_info().rss / 1024 / 1024)
+        except Exception:
+            return 0.0

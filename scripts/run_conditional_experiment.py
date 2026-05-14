@@ -172,21 +172,22 @@ def write_csv(path: Path, rows: list[dict], fieldnames: list[str] | None = None)
 
 def print_summary(summary_rows: list[dict]) -> None:
     print("\nConditional pipeline summary")
-    print("-" * 100)
+    print("-" * 113)
     print(
         f"{'method':<30} | {'FRR':>7} | {'FAR':>7} | {'lat_mean':>9} | "
-        f"{'lat_p95':>8} | {'defer':>7} | {'fast':>7} | {'robust':>7}"
+        f"{'lat_p95':>8} | {'RAM_MB':>8} | {'defer':>7} | {'fast':>7} | {'robust':>7}"
     )
-    print("-" * 100)
+    print("-" * 113)
     for row in summary_rows:
         print(
             f"{row['method_name']:<30} | "
             f"{row['FRR']:>6.1%} | {row['FAR']:>6.1%} | "
             f"{row['latency_mean']:>8.2f} | {row['latency_p95']:>7.2f} | "
+            f"{row.get('ram_peak_mb', 0.0):>7.1f} | "
             f"{row['defer_rate']:>6.1%} | {row['fast_path_rate']:>6.1%} | "
             f"{row['robust_path_rate']:>6.1%}"
         )
-    print("-" * 100)
+    print("-" * 113)
 
 
 def main() -> None:
@@ -195,6 +196,16 @@ def main() -> None:
     parser.add_argument("--data-dir", default=str(ROOT / "data"))
     parser.add_argument("--output-dir", default=str(ROOT / "outputs" / "conditional_pipeline"))
     parser.add_argument("--methods", default="M0,M1,M2,M3,M4")
+    parser.add_argument(
+        "--face-model",
+        default=None,
+        help="InsightFace model pack or alias. 'mobilefacenet' maps to buffalo_sc/MBF@WebFace600K.",
+    )
+    parser.add_argument(
+        "--face-det-size",
+        default=None,
+        help="Detector size, e.g. 320,320 or 256x256.",
+    )
     parser.add_argument("--robust-enhancement", choices=["gamma", "clahe", "gamma+clahe", "none"], default="clahe")
     parser.add_argument("--l-defer", type=float, default=0.12)
     parser.add_argument("--l-robust", type=float, default=0.30)
@@ -202,6 +213,11 @@ def main() -> None:
     parser.add_argument("--q-defer", type=float, default=None)
     parser.add_argument("--max-pairs", type=int, default=300)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--allow-mock-embedder",
+        action="store_true",
+        help="Allow custom dataset runs to use RealEmbedder's mock fallback when InsightFace is missing.",
+    )
     parser.add_argument(
         "--synthetic-robust-delta",
         type=float,
@@ -235,8 +251,14 @@ def main() -> None:
     embedder = None
     if args.dataset == "custom":
         from src.core.embedder import RealEmbedder
+        from src.core.model_config import parse_det_size
 
-        embedder = RealEmbedder()
+        embedder = RealEmbedder(model_name=args.face_model, det_size=parse_det_size(args.face_det_size))
+        if not getattr(embedder, "available", False) and not args.allow_mock_embedder:
+            raise SystemExit(
+                "InsightFace is required for custom dataset benchmarks. "
+                "Install insightface/onnxruntime, or pass --allow-mock-embedder for smoke tests only."
+            )
 
     evaluator = ConditionalEvaluator(
         embedder=embedder,
@@ -269,6 +291,7 @@ def main() -> None:
         "decision",
         "is_genuine",
         "latency_ms",
+        "ram_mb",
         "deferred",
         "defer_reason",
     ]
@@ -290,6 +313,16 @@ def main() -> None:
         "n_robust": args.n_robust,
         "q_defer": args.q_defer,
         "synthetic_robust_delta": args.synthetic_robust_delta,
+        "allow_mock_embedder": bool(args.allow_mock_embedder),
+        "requested_face_model": args.face_model or "mobilefacenet",
+        "resolved_face_model": getattr(embedder, "model_name", "synthetic_scores"),
+        "face_model_description": getattr(embedder, "model_description", "synthetic scores; no face model loaded"),
+        "face_det_size": list(getattr(embedder, "det_size", (320, 320))),
+        "embedding_backend": (
+            "synthetic_scores"
+            if args.dataset == "synthetic"
+            else ("insightface" if getattr(embedder, "available", False) else "mock")
+        ),
     }
     with open(output_dir / "config_used.json", "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)

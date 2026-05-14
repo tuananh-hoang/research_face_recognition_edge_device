@@ -3,6 +3,8 @@ import sys
 import cv2
 import numpy as np
 
+from src.core.model_config import get_face_model_config
+
 try:
     sys.stdout.reconfigure(encoding='utf-8')
 except Exception:
@@ -10,17 +12,31 @@ except Exception:
 
 
 class RealEmbedder:
-    def __init__(self):
+    def __init__(self, model_name: str | None = None, det_size: tuple[int, int] | None = None):
+        self.config = get_face_model_config(model_name, det_size)
+        self.requested_model_name = self.config.requested_name
+        self.model_name = self.config.model_name
+        self.det_size = self.config.det_size
+        self.model_description = self.config.description
         try:
             from insightface.app import FaceAnalysis
             self.app = FaceAnalysis(
-                name='buffalo_sc',
+                name=self.model_name,
                 providers=['CPUExecutionProvider'],
             )
-            self.app.prepare(ctx_id=0, det_size=(320, 320))
+            self.app.prepare(ctx_id=0, det_size=self.det_size)
             self.available = True
+            print(
+                f"[InsightFace] Loaded {self.model_name} "
+                f"(requested={self.requested_model_name}, det_size={self.det_size})"
+            )
+            print(f"[InsightFace] {self.model_description}")
         except ImportError:
             print("WARNING: InsightFace is not available (missing insightface or onnxruntime).")
+            print("WARNING: Using MOCK embeddings for smoke tests only, not for the final report.")
+            self.available = False
+        except Exception as exc:
+            print(f"WARNING: InsightFace model init failed for {self.model_name}: {exc}")
             print("WARNING: Using MOCK embeddings for smoke tests only, not for the final report.")
             self.available = False
 

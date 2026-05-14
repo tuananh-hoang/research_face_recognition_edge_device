@@ -9,12 +9,14 @@ from __future__ import annotations
 import numpy as np
 import cv2
 
+from src.core.model_config import get_face_model_config
+
 __all__ = ['InsightFaceSingleton']
 
 
 class InsightFaceSingleton:
     """
-    Lazy-loading singleton cho InsightFace buffalo_sc model.
+    Lazy-loading singleton cho InsightFace edge/mobile model.
 
     Sử dụng:
         app = InsightFaceSingleton.get_instance()
@@ -23,7 +25,9 @@ class InsightFaceSingleton:
     Nếu insightface không có sẵn → tự động dùng mock mode.
     """
     _instance = None
-    _model_name = 'buffalo_sc'
+    _config = get_face_model_config()
+    _model_name = _config.model_name
+    _det_size = _config.det_size
     _providers = ['CPUExecutionProvider']
 
     @classmethod
@@ -42,8 +46,12 @@ class InsightFaceSingleton:
                 name=cls._model_name,
                 providers=cls._providers,
             )
-            app.prepare(ctx_id=0, det_size=(320, 320))
-            print(f"[InsightFace] Loaded buffalo_sc model (CPU)")
+            app.prepare(ctx_id=0, det_size=cls._det_size)
+            print(
+                f"[InsightFace] Loaded {cls._model_name} model "
+                f"(requested={cls._config.requested_name}, CPU)"
+            )
+            print(f"[InsightFace] {cls._config.description}")
             return app
 
         except ImportError:
@@ -54,8 +62,16 @@ class InsightFaceSingleton:
         except Exception as exc:
             print(f"\n[WARNING] InsightFace init failed ({exc}) — using mock embeddings")
             print("  Model file may be missing. Run: python -c 'from insightface.app import FaceAnalysis; "
-                  "FaceAnalysis(name=\"buffalo_sc\").prepare(0)' to download.")
+                  f"FaceAnalysis(name=\"{cls._model_name}\").prepare(0)' to download.")
             return _MockInsightFaceApp()
+
+    @classmethod
+    def configure(cls, model_name: str | None = None, det_size: tuple[int, int] | None = None):
+        """Configure the singleton before get_instance() is called."""
+        cls._config = get_face_model_config(model_name, det_size)
+        cls._model_name = cls._config.model_name
+        cls._det_size = cls._config.det_size
+        cls.reset()
 
     @classmethod
     def reset(cls):

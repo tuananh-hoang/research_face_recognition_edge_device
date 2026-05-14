@@ -81,6 +81,7 @@ def compute_group_metrics(rows: list[dict]) -> dict:
             "latency_mean": 0.0,
             "latency_std": 0.0,
             "latency_p95": 0.0,
+            "ram_peak_mb": 0.0,
         }
 
     n = len(rows)
@@ -110,6 +111,8 @@ def compute_group_metrics(rows: list[dict]) -> dict:
 
     latencies = [_safe_float(row.get("latency_ms")) for row in rows]
     latencies = [x for x in latencies if x is not None and not math.isnan(x)]
+    ram_values = [_safe_float(row.get("ram_mb")) for row in rows]
+    ram_values = [x for x in ram_values if x is not None and not math.isnan(x)]
 
     fast = sum(1 for row in active if row.get("selected_path") == "fast")
     robust = sum(1 for row in active if row.get("selected_path") == "robust")
@@ -128,6 +131,7 @@ def compute_group_metrics(rows: list[dict]) -> dict:
         "latency_mean": float(np.mean(latencies)) if latencies else 0.0,
         "latency_std": float(np.std(latencies)) if latencies else 0.0,
         "latency_p95": float(np.percentile(latencies, 95)) if latencies else 0.0,
+        "ram_peak_mb": float(np.max(ram_values)) if ram_values else 0.0,
     }
 
 
@@ -162,6 +166,7 @@ def latency_summary(rows: list[dict]) -> list[dict]:
             "latency_mean": row["latency_mean"],
             "latency_std": row["latency_std"],
             "latency_p95": row["latency_p95"],
+            "ram_peak_mb": row["ram_peak_mb"],
             "defer_rate": row["defer_rate"],
             "fast_path_rate": row["fast_path_rate"],
             "robust_path_rate": row["robust_path_rate"],
