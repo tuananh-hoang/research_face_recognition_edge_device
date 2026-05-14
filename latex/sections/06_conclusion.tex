@@ -2,56 +2,34 @@
 
 \subsection{Kết luận}
 
-Nghiên cứu này trình bày một khảo sát thực nghiệm có hệ thống về bốn chiến lược ngưỡng quyết định thích nghi - cố định, phân bin, tuyến tính, và tương tác - cho bài toán nhận diện khuôn mặt trong điều kiện ánh sáng biến đổi, hướng đến triển khai trên thiết bị biên. Thực nghiệm được tiến hành trên tập dữ liệu tự thu thập gồm 14 người với 1.144 ảnh ở ba điều kiện ánh sáng, sử dụng ArcFace (InsightFace \textit{buffalo\_sc}) làm backbone trích xuất đặc trưng.
+Báo cáo này viết lại bài toán nhận diện khuôn mặt trên thiết bị biên theo hướng ra quyết định có kiểm soát rủi ro. Thay vì đặt trọng tâm vào việc hạ threshold khi ảnh tối, nghiên cứu đặt câu hỏi: với cùng một FAR budget, phương pháp nào giảm FRR tốt hơn trong khi vẫn kiểm soát độ trễ, RAM và tỷ lệ cần xác minh thêm.
 
-Đối chiếu với ba câu hỏi nghiên cứu đặt ra ở Mục~1, chúng tôi rút ra các kết luận sau:
+Kết quả AWS edge-constrained simulation cho thấy baseline \method{M0} có FAR khoảng 5,0\% trên cấu hình 1 CPU--512 MB. \method{M4} giảm FAR xuống khoảng 1,6\% nhờ chọn path theo điều kiện. \method{M5} đưa ràng buộc FAR vào calibration và đạt test FAR 0,0\% ở các budget 0,01--0,03, nhưng còn FRR\_active 1,6\%. \method{M6} là phương pháp tốt nhất trong benchmark hiện tại: FAR\_active 0,0\%, FRR\_active 0,0\%, defer rate 0,8\% và automation rate 99,2\% tại $\alpha=0{,}02$.
 
-\begin{enumerate}
-    \item \textbf{H1 - Hiệu quả của ngưỡng thích nghi: Xác nhận một phần.} Chiến lược ngưỡng phân bin (F2) giảm FRR ở điều kiện \texttt{dark} từ 9,8\% xuống 3,9\% (giảm 60\%, $\Delta\text{FRR} = -5{,}9$ pp), vượt mục tiêu đặt ra, trong khi FAR tăng ở mức chấp nhận được ($+1{,}7$ pp). Tuy nhiên, công thức tương tác (F4) không phát huy tác dụng ($\gamma^* = 0{,}0$) trên tập dữ liệu hiện tại, cho thấy mô hình phức tạp hơn không nhất thiết tốt hơn khi dữ liệu hiệu chỉnh có quy mô nhỏ.
+Điểm quan trọng là \method{M6} không cho phép ảnh tối dễ được chấp nhận hơn một cách tùy ý. Ngưỡng được hiệu chỉnh để thỏa mãn FAR budget trên calibration; nếu score nằm trong vùng không chắc chắn, hệ thống defer thay vì tự động accept. Cách này phù hợp hơn với ứng dụng kiểm soát ra/vào, nơi lỗi chấp nhận sai có chi phí an ninh cao.
 
-    \item \textbf{H2 - Ổn định khi cập nhật gallery: Chưa kiểm chứng.} Do giới hạn về thời gian thực hiện, cơ chế cập nhật gallery trực tuyến và metric CP-BWT chưa được đánh giá trên dữ liệu thực tế. Đây là câu hỏi nghiên cứu mở cần được giải quyết trong giai đoạn tiếp theo.
+\subsection{Hạn chế}
 
-    \item \textbf{H3 - Khả năng triển khai biên: Đạt về latency, chưa đạt về RAM.} Latency trung bình 108,6~ms (P95 = 118,6~ms) đáp ứng yêu cầu thời gian thực dưới 200~ms với biên an toàn đáng kể. Tuy nhiên, RAM peak 3,2~GB vượt xa mục tiêu 512~MB, đòi hỏi giải pháp tối ưu bộ nhớ (lượng tử hóa mô hình hoặc thay thế backbone) trước khi triển khai trên thiết bị tài nguyên hạn chế.
-\end{enumerate}
-
-\subsection{Đóng góp của nghiên cứu}
-
-Tổng hợp lại, nghiên cứu này có ba đóng góp chính vào lĩnh vực nhận diện khuôn mặt thích nghi:
+Kết quả hiện tại cần được diễn giải trong phạm vi các hạn chế sau:
 
 \begin{enumerate}
-    \item \textbf{Khung so sánh thực nghiệm}: Cung cấp nghiên cứu so sánh có hệ thống đầu tiên (theo hiểu biết của chúng tôi) giữa bốn dạng hàm ngưỡng quyết định với embedding ArcFace thực tế trong bối cảnh triển khai chấm công tại Việt Nam. Kết quả cho thấy chiến lược phân bin đơn giản đạt hiệu quả cao nhất trên tập dữ liệu quy mô nhỏ, cung cấp hướng dẫn thực tiễn cho các hệ thống triển khai tương tự.
-
-    \item \textbf{Metric CP-BWT}: Đề xuất \textit{Condition-Partitioned Backward Transfer} như một công cụ đo lường tính ổn định của hệ thống nhận diện theo phân vùng điều kiện môi trường, mở rộng khái niệm BWT truyền thống trong học liên tục sang lĩnh vực triển khai thực tế.
-
-    \item \textbf{\textit{Negative finding} có giá trị}: Xác định rằng thành phần tương tác giữa độ sáng và độ nhiễu không phát huy tác dụng trên tập dữ liệu quy mô nhỏ, định hướng cho nghiên cứu tiếp theo về điều kiện cần thiết (quy mô dữ liệu, tính đại diện) để các mô hình ngưỡng phức tạp có thể vượt trội so với phương pháp đơn giản.
-\end{enumerate}
-
-\subsection{Giới hạn của nghiên cứu}
-
-Nghiên cứu này có bốn giới hạn chính cần được lưu ý khi diễn giải kết quả:
-
-\begin{enumerate}
-    \item \textbf{Quy mô và tính đại diện của dữ liệu}: Tập dữ liệu chỉ gồm 14 người trong một môi trường duy nhất. Kết quả, đặc biệt là sự vượt trội của chiến lược Bin so với Linear và Interaction, có thể thay đổi khi quy mô tăng lên và phân bố dữ liệu phong phú hơn.
-
-    \item \textbf{Dữ liệu \texttt{dark} tổng hợp}: Toàn bộ ảnh \texttt{medium} và \texttt{dark} được tạo bằng augmentation, chưa phản ánh đầy đủ sự phức tạp của điều kiện ánh sáng yếu tự nhiên. Điều này ảnh hưởng trực tiếp đến khả năng đánh giá công bằng công thức tương tác (F4) vốn được thiết kế cho tương tác thực tế giữa ánh sáng và nhiễu.
-
-    \item \textbf{RAM chưa đạt mục tiêu}: Với 3,2~GB RAM peak, hệ thống chưa triển khai được trên các thiết bị biên phổ biến (Raspberry Pi 4B) mà không có tối ưu bổ sung.
-
-    \item \textbf{H2 và CP-BWT chưa được đánh giá thực nghiệm}: Câu hỏi nghiên cứu H2 và metric CP-BWT mới dừng ở mức đề xuất lý thuyết, chưa có kết quả thực nghiệm để kiểm chứng.
+    \item \textbf{Dữ liệu nhỏ}: tập đánh giá chỉ có 248 cặp, chia thành 124 cặp calibration và 124 cặp test. Các tỷ lệ phần trăm vì vậy nhạy với một vài mẫu.
+    \item \textbf{Pair-based verification}: giao thức hiện tại phân tích cặp gallery/probe, chưa phải nhận diện full session với nhiều người trong gallery và open-set unknown.
+    \item \textbf{AWS simulation}: benchmark chạy trên AWS ARM với Docker CPU/RAM limits, không phải Raspberry Pi, Jetson hay camera edge vật lý.
+    \item \textbf{Điều kiện môi trường}: dữ liệu tối/nhiễu cần được kiểm soát kỹ hơn bằng ảnh thật ngày/đêm, thay vì chỉ dựa vào dữ liệu đã chuẩn bị trước.
+    \item \textbf{Robust enhancement}: robust path được đánh giá như một lựa chọn thực nghiệm, chưa thể kết luận enhancement luôn cải thiện embedding.
 \end{enumerate}
 
 \subsection{Hướng phát triển}
 
-Dựa trên các giới hạn đã xác định, chúng tôi đề xuất năm hướng phát triển theo thứ tự ưu tiên:
+Các bước tiếp theo nên tập trung vào năm hướng:
 
 \begin{enumerate}
-    \item \textbf{Thu thập dữ liệu \texttt{dark} thực tế}: Xây dựng tập dữ liệu với ít nhất 30--50 người, sử dụng camera thiết bị biên ghi nhận trực tiếp trong điều kiện ca đêm và hành lang thiếu sáng. Đây là điều kiện tiên quyết để kiểm chứng lại giả thuyết về hiệu ứng tương tác (F4) và đánh giá tính tổng quát của kết quả hiện tại.
-
-    \item \textbf{Tối ưu bộ nhớ cho triển khai biên}: Lượng tử hóa mô hình InsightFace sang INT8 bằng ONNX Runtime hoặc TensorRT, kết hợp đánh giá tác động lên accuracy. Thay thế backbone bằng MobileFaceNet nếu yêu cầu RAM nghiêm ngặt ($<$ 512~MB).
-
-    \item \textbf{Triển khai và đánh giá H2}: Cài đặt cơ chế cập nhật gallery trực tuyến, sử dụng metric CP-BWT để đo lường tính ổn định theo từng phân vùng điều kiện trước và sau khi cập nhật.
-
-    \item \textbf{Kiểm chứng trên phần cứng thực tế}: Triển khai pipeline hoàn chỉnh trên Raspberry Pi 5 hoặc các SBC tương đương, đo latency và memory profile trong điều kiện vận hành liên tục (24h).
-
-    \item \textbf{Mở rộng bài toán}: Tích hợp khả năng \textit{open-set recognition} (phát hiện người lạ không có trong gallery) và đánh giá hiệu năng của ngưỡng thích nghi trong ngữ cảnh này, nơi phân biệt giữa genuine pair có similarity thấp (do ảnh tối) và impostor pair trở nên khó khăn hơn.
+    \item Mở rộng tập dữ liệu thật với ảnh ngày/đêm, nhiều người hơn và nhiều camera hơn.
+    \item Chuyển từ pair-based verification sang closed-set và open-set identification ở mức phiên ra/vào.
+    \item Benchmark trên Raspberry Pi, Jetson hoặc thiết bị biên tương đương để xác nhận latency/RAM thực tế.
+    \item Phân tích multi-gallery hoặc prototype theo điều kiện để giảm biến động embedding trong môi trường xấu.
+    \item Bổ sung các kịch bản impersonation/attack để đánh giá FAR trong tình huống an ninh khó hơn.
 \end{enumerate}
+
+Tóm lại, đóng góp chính của nghiên cứu không phải là một công thức hạ ngưỡng cho ảnh tối, mà là một framework ra quyết định: chọn đường xử lý nào, dùng ngưỡng nào, defer khi nào, và đánh đổi FRR/FAR/latency ra sao dưới ràng buộc thiết bị biên.

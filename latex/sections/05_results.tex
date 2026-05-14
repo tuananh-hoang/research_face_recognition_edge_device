@@ -1,119 +1,104 @@
 \section{Kết quả và thảo luận}
+\label{sec:results}
 
-\subsection{So sánh các chiến lược ngưỡng (H1)}
+\subsection{So sánh tổng thể trên cấu hình 1 CPU--512 MB}
 
-Bảng~\ref{tab:main_results} trình bày kết quả FRR, FAR, EER và AUC-ROC của bốn chiến lược ngưỡng trên ba điều kiện ánh sáng. Các giá trị tốt nhất tại mỗi điều kiện được in đậm.
+Bảng~\ref{tab:overall_results} trình bày kết quả chính trên profile \texttt{edge\_1cpu\_512mb}. Với \method{M5} và \method{M6}, bảng chọn FAR budget $\alpha=0{,}02$ làm điểm vận hành đại diện vì đây là mức rủi ro thấp nhưng không quá cực đoan. Các số liệu được lấy từ \texttt{combined\_edge\_summary.csv}.
 
-\begin{table}[h]
+\begin{table}[!htbp]
 \centering
-\caption{So sánh hiệu năng nhận diện theo chiến lược ngưỡng và điều kiện ánh sáng. Mũi tên chỉ hướng tốt hơn. Giá trị tốt nhất tại mỗi bin được in đậm.}
-\label{tab:main_results}
-\begin{tabular}{llcccc}
+\caption{So sánh tổng thể trên profile \texttt{edge\_1cpu\_512mb}. Với \method{M5}/\method{M6}, $\alpha=0{,}02$.}
+\label{tab:overall_results}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lcccccc}
 \toprule
-\textbf{Điều kiện} & \textbf{Phương pháp} & \textbf{FRR$\downarrow$} & \textbf{FAR$\downarrow$} & \textbf{EER$\downarrow$} & \textbf{AUC$\uparrow$} \\
+\textbf{Method} & \textbf{FAR\_active} & \textbf{FRR\_active} & \textbf{FRR + defer} & \textbf{Defer} & \textbf{Automation} & \textbf{P95 latency / RAM} \\
 \midrule
-\multirow{4}{*}{\texttt{bright}}
-  & F1 -- Fixed       & 0,0\% & 2,6\% & 1,0\% & 0,996 \\
-  & F2 -- Bin         & 0,0\% & \textbf{2,4\%} & 1,0\% & 0,996 \\
-  & F3 -- Linear      & 0,0\% & 2,6\% & 1,0\% & 0,996 \\
-  & F4 -- Interaction & 0,0\% & 2,6\% & 1,0\% & 0,996 \\
+\method{M0} Always-fast fixed        & 5,0\% & 0,0\% & 3,2\% & 3,2\% & 96,8\% & 483,9 ms / 219,4 MB \\
+\method{M1} Always-fast bin          & 1,7\% & 0,0\% & 3,2\% & 3,2\% & 96,8\% & 484,4 ms / 219,1 MB \\
+\method{M4} Conditional path bin     & 1,6\% & 0,0\% & 0,0\% & 0,0\% & 100,0\% & 484,0 ms / 219,2 MB \\
+\method{M5} Conditional risk         & 0,0\% & 1,6\% & 1,6\% & 0,0\% & 100,0\% & 491,7 ms / 219,5 MB \\
+\method{M6} Conditional risk + defer & 0,0\% & 0,0\% & 1,6\% & 0,8\% & 99,2\% & 482,8 ms / 211,9 MB \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Kết quả cho thấy \method{M0} có FAR khoảng 5,0\%, vượt các FAR budget thấp như 0,01--0,03. \method{M4} giảm FAR xuống khoảng 1,6\% nhờ chọn path theo điều kiện và dùng ngưỡng theo bin, nhưng phương pháp này chưa trực tiếp hiệu chỉnh theo FAR budget. \method{M5} đặt ràng buộc risk-constrained rõ ràng: tại $\alpha=0{,}02$, test FAR\_active bằng 0,0\%, đổi lại FRR\_active là 1,6\%.
+
+\method{M6} là phương pháp tốt nhất trong benchmark hiện tại: test FAR\_active 0,0\%, FRR\_active 0,0\%, defer rate 0,8\% và automation rate 99,2\%. Điều này không có nghĩa hệ thống ``nhận đúng tất cả''; nếu tính genuine bị defer như một trường hợp chưa phục vụ thành công, FRR + defer là 1,6\%. Cách báo cáo này minh bạch hơn vì defer được tách riêng thay vì bị ẩn trong accuracy.
+
+\subsection{Kết quả theo condition bin tại FAR budget 0,02}
+
+Bảng~\ref{tab:condition_results} so sánh \method{M5} và \method{M6} theo từng condition bin ở FAR budget 0,02. Các số liệu được lấy từ \texttt{combined\_far\_budget\_summary.csv}.
+
+\begin{table}[!htbp]
+\centering
+\caption{So sánh theo condition bin trên \texttt{edge\_1cpu\_512mb}, FAR budget $\alpha=0{,}02$.}
+\label{tab:condition_results}
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Method} & \textbf{Condition} & \textbf{FAR\_active} & \textbf{FRR\_active} & \textbf{FRR + defer} & \textbf{Defer} & \textbf{Automation} \\
 \midrule
-\multirow{4}{*}{\texttt{medium}}
-  & F1 -- Fixed       & 0,0\% & 4,1\% & 2,3\% & 0,998 \\
-  & F2 -- Bin         & 0,0\% & 4,2\% & 2,3\% & 0,998 \\
-  & F3 -- Linear      & 0,0\% & 4,2\% & 2,3\% & 0,998 \\
-  & F4 -- Interaction & 0,0\% & \textbf{4,0\%} & 2,3\% & 0,998 \\
+\method{M5} & bright  & 0,0\% & 5,0\% & 5,0\% & 0,0\% & 100,0\% \\
+\method{M5} & medium  & 0,0\% & 0,0\% & 0,0\% & 0,0\% & 100,0\% \\
+\method{M5} & dark    & 0,0\% & 0,0\% & 0,0\% & 0,0\% & 100,0\% \\
+\method{M5} & overall & 0,0\% & 1,6\% & 1,6\% & 0,0\% & 100,0\% \\
 \midrule
-\multirow{4}{*}{\texttt{dark}}
-  & F1 -- Fixed                    & 9,8\%          & \textbf{1,5\%} & 3,6\% & 0,981 \\
-  & \textbf{F2 -- Bin}             & \textbf{3,9\%} & 3,2\%          & 3,6\% & 0,981 \\
-  & F3 -- Linear                   & 5,9\%          & 1,7\%          & 3,6\% & 0,981 \\
-  & F4 -- Interaction ($\gamma^*{=}0$) & 7,8\%      & 1,5\%          & 3,6\% & 0,981 \\
+\method{M6} & bright  & 0,0\% & 0,0\% & 5,0\% & 2,5\% & 97,5\% \\
+\method{M6} & medium  & 0,0\% & 0,0\% & 0,0\% & 0,0\% & 100,0\% \\
+\method{M6} & dark    & 0,0\% & 0,0\% & 0,0\% & 0,0\% & 100,0\% \\
+\method{M6} & overall & 0,0\% & 0,0\% & 1,6\% & 0,8\% & 99,2\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Phân tích kết quả theo từng điều kiện}
+Trong test split hiện tại, bin \texttt{dark} đạt FAR\_active 0,0\% và FRR\_active 0,0\% cho cả \method{M5} và \method{M6} tại $\alpha=0{,}02$. Vì số cặp test nhỏ, không nên kết luận rằng điều kiện tối đã được giải quyết hoàn toàn. Kết luận hợp lý hơn là: dưới tập test hiện tại, phương pháp risk-constrained không làm tăng FAR trong bin tối, và defer giúp loại bỏ lỗi active còn lại ở mức overall với chi phí tự động hóa rất nhỏ.
 
-\textbf{Điều kiện \texttt{bright} và \texttt{medium}.} Ở hai điều kiện này, tất cả bốn chiến lược cho kết quả gần như tương đương: FRR = 0,0\% và AUC $\geq$ 0,996. Điều này là hợp lý vì khi chất lượng ảnh đủ tốt, phân bố genuine similarity nằm xa ngưỡng quyết định, khiến việc điều chỉnh ngưỡng không tạo ra khác biệt có ý nghĩa.
+\subsection{Ngưỡng calibration của M6}
 
-\textbf{Điều kiện \texttt{dark} - nơi sự khác biệt bộc lộ rõ.} Đây là bin quan trọng nhất và cũng là mục tiêu chính của nghiên cứu:
+Bảng~\ref{tab:thresholds} trình bày ngưỡng accept/reject của \method{M6} tại FAR budget 0,02 trên profile \texttt{edge\_1cpu\_512mb}. Các số liệu được lấy từ \texttt{combined\_calibration\_thresholds.csv}.
 
-\begin{itemize}
-    \item Chiến lược \textbf{Bin (F2)} đạt kết quả tốt nhất về FRR: giảm từ 9,8\% (Fixed) xuống \textbf{3,9\%}, tương ứng giảm 60\% ($\Delta\text{FRR} = -5{,}9$ điểm phần trăm). Mức giảm này vượt ngưỡng mục tiêu H1 đặt ra (giảm ít nhất 10\% tuyệt đối so với Fixed, tức FRR $\leq$ 9,8\% $-$ 10\% là không khả thi; ở đây hiểu là giảm đáng kể và có ý nghĩa thực tiễn).
-
-    \item Chiến lược \textbf{Linear (F3)} giảm FRR xuống 5,9\% ($\Delta\text{FRR} = -3{,}9$ pp), cải thiện rõ so với Fixed nhưng kém hơn Bin.
-
-    \item Chiến lược \textbf{Interaction (F4)} cho kết quả đáng chú ý: quá trình grid search hội tụ tại $\gamma^* = 0{,}0$, nghĩa là thành phần tương tác bị vô hiệu hóa hoàn toàn và F4 thoái biến (\textit{degenerate}) về dạng gần tương đương F1. Nguyên nhân có thể là (i) trên tập dữ liệu hiện tại, $L$ và $N$ không có hiệu ứng tương tác có ý nghĩa, hoặc (ii) quy mô tập dữ liệu quá nhỏ để hiệu chỉnh tham số $\gamma$ một cách đáng tin cậy.
-\end{itemize}
-
-\subsubsection{AUC đồng nhất giữa các chiến lược}
-
-Một quan sát quan trọng là AUC-ROC giống nhau cho tất cả bốn chiến lược tại mỗi bin (0,996 / 0,998 / 0,981). Điều này đúng về mặt toán học: AUC là metric không phụ thuộc ngưỡng (\textit{threshold-independent}), phản ánh chất lượng phân tách của embedding backbone (ArcFace). Bốn chiến lược chỉ khác nhau ở cách chọn điểm vận hành (\textit{operating point}) trên cùng một đường cong ROC, do đó không ảnh hưởng đến AUC.
-
-\subsubsection{Trade-off giữa FRR và FAR}
-
-Chiến lược Bin giảm mạnh FRR ở \texttt{dark} nhưng đồng thời tăng FAR từ 1,5\% lên 3,2\% ($+1{,}7$ pp). Đây là trade-off tất yếu khi hạ ngưỡng: chấp nhận nhiều cặp hơn sẽ giảm từ chối sai nhưng tăng chấp nhận sai. Trong bối cảnh chấm công, FRR cao gây bất tiện trực tiếp cho nhân viên (phải chấm lại), trong khi FAR ở mức 3,2\% vẫn nằm trong giới hạn chấp nhận được đối với hệ thống không yêu cầu bảo mật cao. Tùy theo yêu cầu cụ thể của ứng dụng, vận hành viên có thể điều chỉnh ngưỡng $\tau_{\texttt{dark}}$ để cân bằng hai chỉ số này.
-
-\subsection{Kiểm định thống kê}
-
-McNemar's test được thực hiện để so sánh Interaction (F4) và Linear (F3) trên tập genuine pairs ở điều kiện \texttt{dark}, cho kết quả $p = 1{,}0 > \alpha = 0{,}05$.
-
-Kết quả không bác bỏ được giả thuyết $H_0$ rằng hai phương pháp có hiệu năng tương đương. Kết hợp với việc $\gamma^* = 0{,}0$, chúng tôi kết luận rằng \textbf{không có đủ bằng chứng thống kê} để khẳng định công thức tương tác vượt trội hơn công thức tuyến tính trên tập dữ liệu hiện tại. Một tập dữ liệu lớn hơn với ảnh \texttt{dark} thực tế (không phải tổng hợp) là cần thiết để đưa ra kết luận chắc chắn hơn.
-
-\subsection{Hiệu năng trên thiết bị biên (H3)}
-
-Bảng~\ref{tab:benchmark} trình bày kết quả đo hiệu năng pipeline đầu cuối qua 100 truy vấn liên tiếp trên CPU Intel [ghi rõ model].
-
-\begin{table}[h]
+\begin{table}[!htbp]
 \centering
-\caption{Kết quả benchmark hiệu năng trên CPU (giả lập thiết bị biên)}
-\label{tab:benchmark}
-\begin{tabular}{lrrl}
+\caption{Ngưỡng calibration của \method{M6} tại $\alpha=0{,}02$.}
+\label{tab:thresholds}
+\begin{tabular}{lcccc}
 \toprule
-\textbf{Chỉ số} & \textbf{Đo được} & \textbf{Mục tiêu} & \textbf{Đánh giá} \\
+\textbf{Condition} & \textbf{$\tau_{accept}$} & \textbf{$\tau_{reject}$} & \textbf{Calib. FAR} & \textbf{Calib. FRR} \\
 \midrule
-Latency trung bình     & 108,6~ms & $< 200$~ms  & \textcolor{goodgreen}{\checkmark~Đạt} \\
-Latency std            & 4,58~ms  & --           & -- \\
-Latency P95            & 118,6~ms & $< 300$~ms  & \textcolor{goodgreen}{\checkmark~Đạt} \\
-RAM peak               & 3.211~MB & $< 512$~MB  & \textcolor{badred}{\texttimes~Không đạt} \\
+\texttt{bright} & 0,601 & 0,571 & 0,0\% & 0,0\% \\
+\texttt{medium} & 0,871 & 0,841 & 0,0\% & 0,0\% \\
+\texttt{dark} & 0,554 & 0,524 & 0,0\% & 0,0\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Phân tích latency}
+Bảng này cho thấy ngưỡng của bin \texttt{dark} thấp hơn \texttt{bright}, nhưng điểm quan trọng là ngưỡng được chọn qua ràng buộc FAR trên calibration, không phải hạ thủ công vì trời tối. Với \method{M6}, score nằm giữa $\tau_{reject}$ và $\tau_{accept}$ sẽ bị defer, do đó vùng rủi ro không bị tự động chấp nhận.
 
-Latency trung bình 108,6~ms (std = 4,58~ms, P95 = 118,6~ms) đáp ứng yêu cầu xử lý thời gian thực dưới 200~ms với biên an toàn đáng kể ($\sim$45\%). Độ lệch chuẩn thấp (4,58~ms) cho thấy pipeline có hành vi thời gian ổn định, không xuất hiện các đột biến (\textit{spike}) đáng lo ngại.
+\subsection{So sánh các cấu hình edge-constrained}
 
-\subsubsection{Vấn đề RAM và hướng giải quyết}
+Bảng~\ref{tab:profile_results} báo cáo latency và RAM của \method{M6} tại FAR budget 0,02 trên ba cấu hình AWS. Các số liệu được lấy từ \texttt{combined\_edge\_summary.csv}.
 
-RAM peak đo được là 3.211~MB (xấp xỉ 3,2~GB), vượt xa mục tiêu 512~MB. Nguyên nhân chính là InsightFace \textit{buffalo\_sc} cần tải toàn bộ mô hình nhận diện và phát hiện khuôn mặt vào bộ nhớ. Đây là hạn chế quan trọng nhất đối với việc triển khai trên thiết bị biên tài nguyên hạn chế như Raspberry Pi 4B.
+\begin{table}[!htbp]
+\centering
+\caption{Chi phí tài nguyên của \method{M6} tại $\alpha=0{,}02$ trên ba profile AWS.}
+\label{tab:profile_results}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Profile} & \textbf{CPU} & \textbf{Memory} & \textbf{Mean latency} & \textbf{P95 latency} & \textbf{RAM peak} \\
+\midrule
+\texttt{edge\_1cpu\_512mb} & 1 & 512 MB & 430,4 ms & 482,8 ms & 211,9 MB \\
+\texttt{edge\_1cpu\_1gb}   & 1 & 1 GB   & 438,4 ms & 492,9 ms & 221,5 MB \\
+\texttt{edge\_2cpu\_2gb}   & 2 & 2 GB   & 324,2 ms & 362,5 ms & 210,9 MB \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-Để giải quyết vấn đề này trong triển khai thực tế, có ba hướng tiếp cận khả thi: (i) thay thế backbone bằng mô hình nhẹ hơn như MobileFaceNet ($\sim$4,5~MB), chấp nhận đánh đổi một phần accuracy; (ii) lượng tử hóa (\textit{quantization}) mô hình sang INT8, kỳ vọng giảm $\sim$60\% memory footprint; hoặc (iii) triển khai trên thiết bị biên có tài nguyên lớn hơn (ví dụ: Beelink EQ12, 16~GB RAM). Lưu ý rằng hướng (i) và (ii) đều yêu cầu đánh giá lại toàn bộ kết quả thực nghiệm vì thay đổi backbone sẽ ảnh hưởng đến phân bố similarity.
+Khi tăng từ 1 CPU lên 2 CPU, P95 latency giảm từ khoảng 483--493 ms xuống khoảng 363 ms. RAM peak nằm quanh 211--222 MB trong Docker, thấp hơn giới hạn 512 MB của profile chặt nhất. Tuy nhiên, đây vẫn là kết quả trên AWS ARM có Docker limit, không phải số đo trực tiếp trên board biên vật lý.
 
-\subsection{Thảo luận tổng hợp}
-\label{sec:discussion}
+\subsection{Diễn giải và giới hạn của kết quả}
 
-\subsubsection{Tại sao chiến lược đơn giản nhất lại hiệu quả nhất?}
+Kết quả ủng hộ hướng risk-constrained theo ba điểm. Thứ nhất, so sánh tại cùng FAR budget rõ ràng hơn so với chỉ báo cáo FRR/FAR rời rạc. Thứ hai, defer nhỏ có thể giảm lỗi active mà vẫn giữ automation rate cao. Thứ ba, conditional path dùng robust path khoảng 21\% số mẫu, nghĩa là hệ thống không luôn bật pipeline nặng.
 
-Kết quả thực nghiệm cho thấy ngưỡng phân bin (F2) - chiến lược đơn giản nhất trong ba chiến lược thích nghi - lại đạt FRR thấp nhất ở điều kiện \texttt{dark}. Hiện tượng này có thể giải thích qua nguyên lý \textit{bias-variance trade-off}: với tập dữ liệu nhỏ (14 người, 1.144 ảnh), chiến lược Bin chỉ cần ước lượng 3 giá trị ngưỡng rời rạc (mỗi bin một ngưỡng, hiệu chỉnh trực tiếp từ dữ liệu theo ràng buộc FAR), trong khi Linear cần ước lượng 3 hệ số liên tục và Interaction cần 3 tham số phi tuyến. Số tham số tăng mà dữ liệu không đủ lớn dẫn đến phương sai ước lượng cao (\textit{high estimation variance}), khiến các công thức phức tạp không phát huy được lợi thế lý thuyết.
-
-Phát hiện này nhất quán với quan sát phổ biến trong machine learning thực hành: trên tập dữ liệu nhỏ, mô hình đơn giản với ít tham số thường ổn định hơn mô hình phức tạp, ngay cả khi mô hình phức tạp có \textit{inductive bias} phù hợp hơn về mặt lý thuyết.
-
-\subsubsection{Ý nghĩa của \textit{negative finding}}
-
-Việc thành phần tương tác bị vô hiệu hóa ($\gamma^* = 0{,}0$) là một kết quả nghiên cứu có giá trị, không phải thất bại. Kết quả này cho thấy giả thuyết về hiệu ứng tương tác nhân giữa $L$ và $N$ - dù hợp lý về mặt vật lý (ánh sáng yếu và nhiễu cao đồng thời gây suy giảm chất lượng nhân chứ không phải cộng) - cần được kiểm chứng trên tập dữ liệu lớn hơn với ảnh \texttt{dark} thực tế trước khi đưa vào sản phẩm. Cụ thể, hai điều kiện cần thiết để đánh giá lại F4 một cách công bằng là: (i) quy mô ít nhất 50--100 người với ảnh thật ở cả ba điều kiện, và (ii) ảnh \texttt{dark} thu thập trực tiếp từ camera thiết bị biên trong điều kiện ánh sáng yếu tự nhiên, không phải augmentation.
-
-\subsubsection{Hạn chế và mối đe dọa đối với tính hợp lệ}
-
-Nghiên cứu này có một số hạn chế cần được nêu rõ:
-
-\begin{itemize}
-    \item \textbf{Tính đại diện của dữ liệu}: Tập dữ liệu chỉ gồm 14 người trong một môi trường duy nhất (hành lang văn phòng). Kết quả có thể không tổng quát hóa cho quy mô lớn hơn hoặc môi trường khác (nhà máy, ngoài trời, nhiều nguồn sáng).
-
-    \item \textbf{Dữ liệu tổng hợp}: Ảnh \texttt{medium} và \texttt{dark} hoàn toàn được tạo bằng augmentation. Dù các phép biến đổi được sử dụng rộng rãi trong nghiên cứu~\cite{liu2021survey}, dữ liệu tổng hợp không nắm bắt được đầy đủ các hiện tượng trong thực tế như bóng đổ cục bộ, ánh sáng nhấp nháy, hay phản xạ từ kính.
-
-    \item \textbf{Giả lập thiết bị biên}: Thực nghiệm chạy trên CPU Intel, không phải trên thiết bị ARM thực tế. Latency và memory profile trên Raspberry Pi hoặc các SBC tương đương có thể khác biệt đáng kể do kiến trúc vi xử lý và băng thông bộ nhớ khác nhau.
-
-    \item \textbf{Chưa đánh giá CP-BWT}: Do giới hạn thời gian, metric CP-BWT được đề xuất ở mức khái niệm và công thức, chưa có thực nghiệm đánh giá trên dữ liệu thực tế. Đây là hướng ưu tiên cho nghiên cứu tiếp theo.
-\end{itemize}
+Dù vậy, có ba giới hạn cần nhấn mạnh. Tập test chỉ có 124 cặp nên một vài phần trăm tương ứng với rất ít mẫu; vì vậy FAR 0,0\% không nên được hiểu là bảo đảm an toàn tuyệt đối. Ngoài ra, tại FAR budget 0,05, \method{M5} có test FAR 6,5\%, cao hơn mức calibration mong muốn, cho thấy sai lệch giữa calibration/test có thể xảy ra khi dữ liệu nhỏ. Cuối cùng, dữ liệu tối và nhiễu cần được kiểm chứng thêm bằng ảnh thật thu từ camera biên trong điều kiện ngày/đêm tự nhiên.
