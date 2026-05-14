@@ -1,140 +1,160 @@
-\section{Phương pháp đề xuất}
+\section{Phương pháp}
 
-\subsection{Tổng quan pipeline}
+\subsection{Giao thức xác minh theo cặp}
 
-Hình~\ref{fig:pipeline} minh họa kiến trúc tổng thể của hệ thống đề xuất. Pipeline xử lý một ảnh truy vấn (\textit{probe image}) qua bốn module tuần tự, mỗi module đảm nhận một chức năng độc lập và có thể thay thế riêng biệt:
-
-\begin{enumerate}
-    \item \textbf{Module A - Trích xuất đặc trưng} (\textit{Feature Extraction}): Sử dụng ArcFace (\textit{buffalo\_sc}) để ánh xạ ảnh khuôn mặt đã cắt và căn chỉnh (\textit{aligned face crop}) thành vector embedding $\mathbf{e} \in \mathbb{R}^{512}$, chuẩn hóa L2 sao cho $\|\mathbf{e}\|_2 = 1$.
-
-    \item \textbf{Module B - Đánh giá chất lượng ảnh} (\textit{Image Quality Assessment - IQA}): Trích xuất hai tín hiệu môi trường từ ảnh đầu vào: độ sáng $L$ và mức nhiễu $N$, tạo thành vector ngữ cảnh $C = [L, N]$.
-
-    \item \textbf{Module C - Ngưỡng quyết định thích nghi} (\textit{Adaptive Thresholding}): Tính ngưỡng $\tau(C)$ từ vector ngữ cảnh $C$. Đây là module trung tâm của nghiên cứu, nơi bốn chiến lược ngưỡng được so sánh.
-
-    \item \textbf{Module D - Quản lý gallery} (\textit{Gallery Manager}): Lưu trữ các prototype embedding cho từng danh tính và hỗ trợ cập nhật trực tuyến theo phân vùng điều kiện ánh sáng.
-\end{enumerate}
-
-Quy trình ra quyết định nhận diện tại thời điểm suy luận diễn ra như sau: ảnh truy vấn đi qua Module A để thu được $\mathbf{e}$, đồng thời Module B tính $C = [L, N]$. Module C sử dụng $C$ để xác định ngưỡng $\tau(C)$. Cuối cùng, hệ thống so sánh cosine similarity $\text{sim}(\mathbf{e}, \mathbf{g}_k)$ giữa $\mathbf{e}$ và các prototype $\mathbf{g}_k$ trong gallery: nếu $\max_k \text{sim}(\mathbf{e}, \mathbf{g}_k) \geq \tau(C)$ thì quyết định là \textit{match}, ngược lại là \textit{reject}.
-
-\subsection{Module B: Đánh giá chất lượng ảnh}
-
-Module này trích xuất hai đại lượng vật lý đơn giản từ ảnh đầu vào, đảm bảo chi phí tính toán tối thiểu phù hợp với triển khai trên thiết bị biên.
-
-\subsubsection{Độ sáng trung bình ($L$)}
-
-Độ sáng $L$ được tính từ kênh Y (luminance) trong không gian màu YCrCb, phản ánh mức ánh sáng tổng thể của ảnh:
+Thực nghiệm hiện tại dùng giao thức xác minh theo cặp (\textit{pair-based verification}). Mỗi mẫu đánh giá gồm một ảnh gallery và một ảnh probe. Nếu hai ảnh thuộc cùng danh tính, cặp được gọi là genuine pair; nếu khác danh tính, cặp được gọi là impostor pair. Hệ thống tính embedding cho hai ảnh và lấy cosine similarity:
 
 \begin{equation}
-    L = \frac{1}{HW} \sum_{i=1}^{H} \sum_{j=1}^{W} \frac{Y_{ij}}{255} \in [0, 1]
-    \label{eq:luminance}
+    s(x_a, x_b) =
+    \cos\left(\phi(x_a), \phi(x_b)\right)
+    =
+    \frac{\phi(x_a)^\top \phi(x_b)}
+    {\|\phi(x_a)\|_2 \|\phi(x_b)\|_2}.
+    \label{eq:cosine}
 \end{equation}
 
-\noindent trong đó $H \times W$ là kích thước ảnh và $Y_{ij}$ là giá trị luminance tại pixel $(i, j)$.
+Một genuine pair bị từ chối là false rejection; một impostor pair được chấp nhận là false acceptance. Giao thức này phù hợp để phân tích hành vi ngưỡng, FAR và FRR. Tuy nhiên, nó chưa phải là bài toán nhận diện phiên đầy đủ, nơi một probe được so với nhiều danh tính trong gallery và cần xử lý các tình huống open-set.
 
-\subsubsection{Mức nhiễu ước tính ($N$)}
+\subsection{Trích xuất ngữ cảnh môi trường}
 
-Mức nhiễu $N$ được ước tính bằng phương pháp \textit{residual noise estimation}: tính độ lệch chuẩn của phần dư sau khi trừ đi phiên bản làm mịn Gaussian của ảnh gốc:
+Với mỗi ảnh đầu vào $x$, hệ thống tính vector ngữ cảnh:
 
 \begin{equation}
-    N = \frac{\text{std}\bigl(Y - \text{GaussianBlur}(Y,\; k{=}5)\bigr)}{255} \in [0, 1]
+    C(x) = [L(x), N(x), q(x)],
+    \label{eq:context}
+\end{equation}
+
+\noindent trong đó $L$ là độ sáng chuẩn hóa, $N$ là nhiễu ước tính, và $q$ là độ tin cậy phát hiện hoặc proxy chất lượng. Độ sáng được tính từ kênh luminance:
+
+\begin{equation}
+    L = \frac{1}{HW} \sum_{i=1}^{H}\sum_{j=1}^{W}\frac{Y_{ij}}{255}.
+    \label{eq:brightness}
+\end{equation}
+
+Nhiễu được ước tính từ phần dư sau làm mịn Gaussian:
+
+\begin{equation}
+    N = \frac{\operatorname{std}(Y - \operatorname{GaussianBlur}(Y))}{255}.
     \label{eq:noise}
 \end{equation}
 
-\noindent Kích thước kernel $k = 5 \times 5$ được chọn theo thực nghiệm để cân bằng giữa khả năng ước tính nhiễu tần số cao và bảo toàn cạnh (\textit{edge preservation}).
-
-\subsubsection{Phân bin điều kiện ánh sáng}
-
-Để phục vụ chiến lược ngưỡng phân bin (Formula~2), giá trị $L$ liên tục được rời rạc hóa thành ba mức:
+Giá trị $L$ được rời rạc hóa thành ba bin:
 
 \begin{equation}
-    \text{bin}(L) = \begin{cases}
-        \texttt{dark}   & \text{nếu } L < 0{,}30 \\
-        \texttt{medium} & \text{nếu } 0{,}30 \leq L \leq 0{,}60 \\
-        \texttt{bright} & \text{nếu } L > 0{,}60
+    b(L)=
+    \begin{cases}
+        \texttt{dark},   & L < 0{,}30,\\
+        \texttt{medium}, & 0{,}30 \leq L \leq 0{,}60,\\
+        \texttt{bright}, & L > 0{,}60.
     \end{cases}
-    \label{eq:binning}
+    \label{eq:bins}
 \end{equation}
 
-\noindent Các ngưỡng phân bin $0{,}30$ và $0{,}60$ được xác định dựa trên phân tích phân bố luminance trên tập huấn luyện (chi tiết tại Mục~\ref{sec:experiments}).
+Các bin này không được dùng để tự động hạ ngưỡng, mà dùng để hiệu chỉnh ngưỡng riêng theo phân bố calibration của từng điều kiện.
 
-\subsection{Module C: Bốn chiến lược ngưỡng quyết định}
+\subsection{Đường xử lý có điều kiện}
 
-Nghiên cứu này thực nghiệm bốn dạng hàm ngưỡng theo thứ tự tăng dần độ phức tạp, từ không có tham số đến đa tham số phi tuyến. Mục đích là trả lời câu hỏi: \textit{mức độ phức tạp nào của hàm ngưỡng là đủ và hiệu quả cho bài toán thực tế?}
-
-\subsubsection{Formula 1: Ngưỡng cố định (\textit{Fixed})}
-
-Ngưỡng cố định là baseline phổ biến nhất trong triển khai thực tế, không phụ thuộc vào bất kỳ tín hiệu nào từ ảnh truy vấn:
-
-\begin{equation}
-    \tau_{\text{fixed}} = 0{,}44
-    \label{eq:fixed}
-\end{equation}
-
-\noindent Giá trị $0{,}44$ được chọn theo khuyến nghị mặc định của InsightFace cho mô hình \textit{buffalo\_sc}.
-
-\subsubsection{Formula 2: Ngưỡng phân bin (\textit{Bin-specific})}
-
-Mỗi bin điều kiện ánh sáng được gán một ngưỡng riêng, hiệu chỉnh (\textit{calibrate}) trên tập validation sao cho $\text{FAR} \approx 1\%$ tại mỗi bin:
-
-\begin{equation}
-    \tau_{\text{bin}}(b) = \begin{cases}
-        0{,}48 & \text{nếu } b = \texttt{bright} \\
-        0{,}42 & \text{nếu } b = \texttt{medium} \\
-        0{,}35 & \text{nếu } b = \texttt{dark}
-    \end{cases}
-    \label{eq:bin}
-\end{equation}
-
-\noindent Trực giác thiết kế: ảnh tối có phân bố \textit{genuine similarity} thấp hơn, do đó cần hạ ngưỡng để duy trì tỷ lệ chấp nhận hợp lý.
-
-\subsubsection{Formula 3: Ngưỡng tuyến tính (\textit{Linear})}
-
-Thay vì rời rạc hóa, hàm tuyến tính mô hình hóa mối quan hệ liên tục giữa ngưỡng và hai tín hiệu $L$, $N$:
-
-\begin{equation}
-    \tau_{\text{linear}}(L, N) = 0{,}48 - 0{,}10 \cdot (1 - L) - 0{,}05 \cdot N
-    \label{eq:linear}
-\end{equation}
-
-\noindent Các hệ số $0{,}10$ và $0{,}05$ được ước lượng bằng hồi quy tuyến tính (\textit{linear regression}) trên tập validation, trong đó biến mục tiêu là ngưỡng tối ưu cục bộ tại mỗi mẫu. Dạng $(1 - L)$ đảm bảo ngưỡng giảm khi ánh sáng yếu và tăng khi nhiễu thấp.
-
-\subsubsection{Formula 4: Ngưỡng tương tác (\textit{Interaction})}
-
-Dựa trên quan sát rằng trong thực tế, ánh sáng yếu và nhiễu cao thường xuất hiện đồng thời và tạo ra hiệu ứng suy giảm chất lượng \textbf{nhân} chứ không phải cộng, công thức này mô hình hóa tương tác giữa hai tín hiệu:
-
-\begin{equation}
-    \tau_{\text{int}}(L, N, q) = \tau_{\text{base}} \cdot \bigl(1 - \gamma(1-L)N\bigr) \cdot q + \tau_{\text{floor}} \cdot (1-q)
-    \label{eq:interaction}
-\end{equation}
-
-\noindent trong đó:
-\begin{itemize}
-    \item $q = \text{det\_score}$ là điểm tin cậy từ bộ phát hiện khuôn mặt, đóng vai trò \textit{quality proxy};
-    \item $\tau_{\text{base}} = 0{,}48$ là ngưỡng cơ sở ở điều kiện lý tưởng;
-    \item $\tau_{\text{floor}} = 0{,}30$ là ngưỡng sàn, ngăn $\tau$ giảm quá thấp khi $q$ rất nhỏ;
-    \item $\gamma$ là hệ số tương tác, được tìm bằng \textit{grid search} trên tập validation với ràng buộc $\text{FAR}_{\text{int}} \leq \text{FAR}_{\text{fixed}} + 0{,}02$.
-\end{itemize}
-
-\noindent Công thức này có ba tham số cần hiệu chỉnh ($\gamma$, $\tau_{\text{base}}$, $\tau_{\text{floor}}$), nhiều nhất trong bốn chiến lược, đặt ra câu hỏi liệu độ phức tạp bổ sung có mang lại cải thiện tương xứng hay không.
-
-\subsection{Metric đề xuất: Condition-Partitioned Backward Transfer}
-
-Trong quá trình vận hành, gallery của hệ thống nhận diện được cập nhật liên tục khi có thêm ảnh mới. Một vấn đề thực tế quan trọng là: \textit{việc cập nhật gallery bằng ảnh chụp ở điều kiện tối có làm suy giảm hiệu năng nhận diện ở điều kiện sáng hay không?} Đây là dạng bài toán \textit{catastrophic forgetting} nhưng phân rã theo điều kiện môi trường thay vì theo task.
-
-Để đo lường hiện tượng này, chúng tôi đề xuất \textit{Condition-Partitioned Backward Transfer} (CP-BWT):
-
-\begin{equation}
-    \text{CP-BWT}(p) = \text{Acc}_p^{\text{after}} - \text{Acc}_p^{\text{before}}
-    \label{eq:cpbwt}
-\end{equation}
-
-\noindent trong đó $p \in \{\texttt{bright},\; \texttt{medium},\; \texttt{dark}\}$ là phân vùng điều kiện ánh sáng, $\text{Acc}_p^{\text{before}}$ và $\text{Acc}_p^{\text{after}}$ lần lượt là accuracy tại phân vùng $p$ trước và sau khi cập nhật gallery với ảnh từ điều kiện tối.
-
-Cách diễn giải metric này như sau:
+Hệ thống xét ba đường xử lý:
 
 \begin{itemize}
-    \item $\text{CP-BWT}(p) \geq 0$: Hệ thống không bị suy giảm (\textit{no forgetting}) tại phân vùng $p$ sau khi cập nhật gallery.
-    \item $\text{CP-BWT}(p) < 0$: Cập nhật gallery gây ra \textit{backward interference} tại phân vùng $p$, mức độ nghiêm trọng tỷ lệ với giá trị tuyệt đối.
+    \item \textbf{Fast path}: không dùng enhancement bổ sung, ưu tiên độ trễ thấp cho ảnh đủ tốt.
+    \item \textbf{Robust path}: dùng tiền xử lý nhẹ như CLAHE/gamma để tăng độ bền vững trong điều kiện xấu.
+    \item \textbf{Defer path}: không tự động quyết định khi chất lượng hoặc score nằm trong vùng không chắc chắn.
 \end{itemize}
 
-\noindent Khác với BWT truyền thống trong học liên tục (\textit{continual learning})~\cite{lopez2017gradient} vốn đo sự suy giảm hiệu năng theo task tuần tự (ví dụ: người dùng mới), CP-BWT phân rã hiệu năng theo \textbf{phân vùng điều kiện môi trường}. Điều này phù hợp hơn với bài toán triển khai thực tế, nơi vận hành viên quan tâm đến câu hỏi: ``sau khi hệ thống học thêm dữ liệu ban đêm, hiệu năng ban ngày có bị ảnh hưởng không?''
+Policy chọn đường xử lý được ký hiệu:
+
+\begin{equation}
+    r = \pi(C), \qquad r \in \{\texttt{fast}, \texttt{robust}, \texttt{defer}\}.
+    \label{eq:path_policy}
+\end{equation}
+
+Robust preprocessing được xem là một đường xử lý ứng viên, không được giả định luôn cải thiện embedding. Vì vậy, báo cáo đánh giá robust path thông qua FRR/FAR/latency thay vì mặc định coi enhancement là tốt hơn.
+
+\subsection{Ra quyết định có kiểm soát rủi ro}
+
+Với FAR budget $\alpha$, ngưỡng risk-constrained được hiệu chỉnh trên tập calibration $\mathcal{D}_{cal}$ bằng bài toán:
+
+\begin{equation}
+    \tau_{\alpha,r,b}
+    =
+    \arg\min_{\tau}
+    \operatorname{FRR}_{cal}(\tau \mid r,b)
+    \quad
+    \text{s.t.}
+    \quad
+    \operatorname{FAR}_{cal}(\tau \mid r,b) \leq \alpha.
+    \label{eq:risk_threshold}
+\end{equation}
+
+Trong đó $r$ là đường xử lý, $b$ là bin điều kiện, và $\alpha \in \{0{,}01, 0{,}02, 0{,}03, 0{,}05\}$. Công thức~\ref{eq:risk_threshold} là điểm khác biệt chính so với ngưỡng thích nghi đơn thuần: ngưỡng chỉ được chọn nếu thỏa mãn ràng buộc FAR trên tập calibration.
+
+Với phương pháp \method{M5}, hệ thống quyết định:
+
+\begin{equation}
+    \hat{y} =
+    \begin{cases}
+        \texttt{accept}, & s \geq \tau_{\alpha,r,b},\\
+        \texttt{reject}, & s < \tau_{\alpha,r,b}.
+    \end{cases}
+    \label{eq:m5_decision}
+\end{equation}
+
+Với phương pháp \method{M6}, hệ thống thêm vùng defer quanh ngưỡng chấp nhận:
+
+\begin{equation}
+    \tau_{\text{accept}} = \tau_{\alpha,r,b},
+    \qquad
+    \tau_{\text{reject}} = \tau_{\text{accept}} - \delta,
+    \label{eq:defer_thresholds}
+\end{equation}
+
+\noindent với $\delta=0{,}03$ trong thực nghiệm. Quyết định cuối cùng là:
+
+\begin{equation}
+    \hat{y} =
+    \begin{cases}
+        \texttt{accept}, & s \geq \tau_{\text{accept}},\\
+        \texttt{reject}, & s < \tau_{\text{reject}},\\
+        \texttt{defer}, & \tau_{\text{reject}} \leq s < \tau_{\text{accept}}.
+    \end{cases}
+    \label{eq:m6_decision}
+\end{equation}
+
+Nhờ defer, một mẫu không đủ chắc chắn không bị tự động chấp nhận chỉ vì môi trường xấu. Đây là cơ chế quan trọng để trả lời rủi ro an ninh của bài toán.
+
+\subsection{Các phương pháp so sánh}
+
+Bảng~\ref{tab:methods} tóm tắt các phương pháp được đánh giá trong benchmark AWS cuối cùng.
+
+\begin{table}[!htbp]
+\centering
+\caption{Các phương pháp được so sánh trong giao thức risk-constrained}
+\label{tab:methods}
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{ID} & \textbf{Tên} & \textbf{Mô tả} \\
+\midrule
+\method{M0} & Always-fast fixed & Fast path với một ngưỡng cố định cho mọi điều kiện. \\
+\method{M1} & Always-fast bin & Fast path với ngưỡng riêng cho từng bin sáng/trung bình/tối. \\
+\method{M4} & Conditional path bin & Chọn fast/robust theo điều kiện, sau đó dùng ngưỡng theo path và bin. \\
+\method{M5} & Conditional risk & Chọn path theo điều kiện và hiệu chỉnh ngưỡng sao cho FAR calibration $\leq \alpha$. \\
+\method{M6} & Conditional risk + defer & Mở rộng \method{M5} bằng vùng defer giữa reject và accept. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Metric đánh giá}
+
+Ngoài FAR và FRR thông thường, báo cáo dùng các metric sau:
+
+\begin{itemize}
+    \item \textbf{FAR\_active}: FAR trên các mẫu mà hệ thống tự động accept/reject, không tính mẫu defer.
+    \item \textbf{FRR\_active}: FRR trên các mẫu mà hệ thống tự động accept/reject.
+    \item \textbf{FRR\_with\_defer\_as\_failure\_for\_genuine}: tính genuine bị defer như một trường hợp chưa phục vụ thành công.
+    \item \textbf{defer\_rate}: tỷ lệ mẫu cần xác minh thêm.
+    \item \textbf{automation\_rate}: $1-\text{defer\_rate}$, tỷ lệ mẫu được hệ thống xử lý tự động.
+    \item \textbf{latency\_mean, latency\_p95, ram\_peak\_mb}: chi phí tài nguyên trong mô phỏng thiết bị biên.
+\end{itemize}
+
+Khi so sánh các phương pháp risk-constrained, kết quả chỉ có ý nghĩa nếu FAR\_active được kiểm tra cùng với FRR\_active và defer\_rate. Một phương pháp defer nhiều có thể giảm lỗi tự động, nhưng automation rate thấp sẽ làm giảm giá trị vận hành.

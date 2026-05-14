@@ -91,4 +91,4 @@ EOF
   fi
 done
 
-python scripts/summarize_edge_benchmark.py --input-dir "${OUTPUT_ROOT}"
+python3 scripts/summarize_edge_benchmark.py --input-dir "${OUTPUT_ROOT}"

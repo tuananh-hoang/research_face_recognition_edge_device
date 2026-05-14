@@ -1,116 +1,76 @@
 \section{Thiết kế thực nghiệm}
 
-\subsection{Tập dữ liệu}
+\subsection{Tập dữ liệu và giao thức chia tập}
 
-Do không tồn tại tập dữ liệu công khai (\textit{public dataset}) nào phù hợp với bối cảnh chấm công bằng khuôn mặt trong hành lang văn phòng tại Việt Nam - nơi điều kiện ánh sáng biến thiên mạnh giữa các ca làm việc - chúng tôi tự thu thập và xây dựng tập dữ liệu riêng phục vụ nghiên cứu.
+Thực nghiệm sử dụng tập dữ liệu tùy chỉnh đã được chuẩn bị trước và đồng bộ lên Amazon S3. Dữ liệu đầu vào đã bao gồm các biến thể điều kiện môi trường cần thiết; benchmark AWS chỉ đọc dữ liệu và chạy inference, không sinh augmentation lại trong quá trình đo.
 
-\subsubsection{Thu thập dữ liệu gốc}
-
-Dữ liệu gốc gồm \textbf{104 ảnh} của \textbf{14 người} (trung bình 7,4 ảnh/người), được chụp tại hành lang văn phòng trường trong khoảng thời gian 16h00--17h00 bằng điện thoại thông thường. Điều kiện chụp được cố định ở mức ánh sáng đầy đủ (\texttt{bright}) để đảm bảo chất lượng ảnh gốc làm cơ sở cho quá trình augmentation.
-
-\subsubsection{Augmentation tạo điều kiện ánh sáng tổng hợp}
-
-Từ tập ảnh gốc \texttt{bright}, chúng tôi sinh ảnh tổng hợp (\textit{synthetic}) cho hai điều kiện còn lại (\texttt{medium} và \texttt{dark}) bằng cách kết hợp bốn phép biến đổi mô phỏng suy giảm chất lượng thực tế trên camera thiết bị biên~\cite{liu2021survey}:
+Sau bước sinh cặp và lọc các mẫu hợp lệ qua pipeline nhận diện, tập đánh giá gồm 248 cặp xác minh. Tập này được chia ngẫu nhiên nhưng cố định bằng seed 42:
 
 \begin{itemize}
-    \item \textbf{Gamma correction}: Giảm độ sáng tổng thể với $\gamma \in [0{,}25;\; 0{,}45]$ cho \texttt{dark} và $\gamma \in [0{,}55;\; 0{,}75]$ cho \texttt{medium}.
-    \item \textbf{Gaussian noise}: Mô phỏng nhiễu cảm biến ở ISO cao với $\sigma \in [10;\; 25]$.
-    \item \textbf{Motion blur}: Mô phỏng rung tay hoặc chuyển động, áp dụng với xác suất 40\%.
-    \item \textbf{JPEG compression}: Mô phỏng nén ảnh trên thiết bị với quality $\in [50;\; 75]$.
+    \item \textbf{Calibration split}: 124 cặp, dùng để hiệu chỉnh ngưỡng theo FAR budget.
+    \item \textbf{Test split}: 124 cặp, dùng để báo cáo kết quả cuối cùng.
 \end{itemize}
 
-Mỗi ảnh gốc được augment thành 5 biến thể cho mỗi điều kiện, tạo ra tổng cộng $104 \times 5 = 520$ ảnh cho mỗi bin \texttt{medium} và \texttt{dark}. Bảng~\ref{tab:dataset} tổng hợp thống kê tập dữ liệu.
+Việc tách calibration/test giúp tránh đánh giá ngưỡng ngay trên dữ liệu đã dùng để chọn ngưỡng. Tuy nhiên, quy mô 248 cặp vẫn nhỏ, vì vậy các kết quả cần được xem là bằng chứng thực nghiệm ban đầu thay vì kết luận tổng quát.
 
-\begin{table}[h]
+\subsection{Mô hình nhận diện}
+
+Mô hình nhận diện dùng InsightFace \textit{buffalo\_sc}. Trong log chạy thực nghiệm, mô hình recognition được nạp từ file \textit{w600k\_mbf.onnx}, tức backbone MBF/WebFace600K mang phong cách MobileFaceNet. Đây là lựa chọn phù hợp hơn với mục tiêu edge so với các gói InsightFace lớn hơn. Detector chạy với kích thước đầu vào $320 \times 320$, sử dụng CPUExecutionProvider của ONNX Runtime.
+
+Cấu hình chính:
+
+\begin{itemize}
+    \item Requested model: \texttt{mobilefacenet}
+    \item Resolved InsightFace pack: \texttt{buffalo\_sc}
+    \item Recognition backend: \texttt{w600k\_mbf.onnx}
+    \item Detector size: $320 \times 320$
+    \item Embedding backend: InsightFace/ONNX Runtime CPU
+\end{itemize}
+
+\subsection{Các FAR budget}
+
+Thực nghiệm risk-constrained đánh giá bốn mức ngân sách rủi ro:
+
+\begin{equation}
+    \alpha \in \{0{,}01,\;0{,}02,\;0{,}03,\;0{,}05\}.
+\end{equation}
+
+Với mỗi $\alpha$, \method{M5} và \method{M6} hiệu chỉnh ngưỡng riêng theo condition bin trên tập calibration. Với \method{M6}, margin defer là $\delta=0{,}03$.
+
+\subsection{Mô phỏng thiết bị biên trên AWS}
+
+Benchmark được chạy trên AWS EC2 ARM và dùng Docker để giới hạn CPU/RAM. Cách làm này không giống hoàn toàn Raspberry Pi hoặc Jetson thật, nhưng tạo ra môi trường có thể tái lập để so sánh các phương pháp dưới cùng ràng buộc tài nguyên.
+
+\begin{table}[!htbp]
 \centering
-\caption{Thống kê tập dữ liệu theo điều kiện ánh sáng}
-\label{tab:dataset}
-\begin{tabular}{lrrrl}
+\caption{Các cấu hình edge-constrained được dùng trong benchmark AWS}
+\label{tab:aws_profiles}
+\begin{tabular}{lcc}
 \toprule
-\textbf{Điều kiện} & \textbf{Số ảnh gốc} & \textbf{Số ảnh tổng} & \textbf{Ảnh/người} & \textbf{Nguồn} \\
+\textbf{Profile} & \textbf{CPU limit} & \textbf{Memory limit} \\
 \midrule
-\texttt{bright}  & 104 & 104 & $\sim$7,4 & Chụp thật (hành lang, đèn đủ sáng) \\
-\texttt{medium}  & 0   & 520 & 37,1 & Synthetic (augmentation từ \texttt{bright}) \\
-\texttt{dark}    & 0   & 520 & 37,1 & Synthetic (augmentation từ \texttt{bright}) \\
-\midrule
-\textbf{Tổng}    & \textbf{104} & \textbf{1.144} & & \\
+\texttt{edge\_1cpu\_512mb} & 1 CPU & 512 MB \\
+\texttt{edge\_1cpu\_1gb}   & 1 CPU & 1 GB \\
+\texttt{edge\_2cpu\_2gb}   & 2 CPU & 2 GB \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Sinh cặp đánh giá}
-
-Từ tập 1.144 ảnh, chúng tôi sinh \textbf{2.954 cặp} gồm hai loại:
+Các profile này được chạy bằng cùng một script benchmark để đo cả hiệu năng nhận diện và chi phí tài nguyên. Kết quả được lưu ở hai nơi:
 
 \begin{itemize}
-    \item \textbf{Genuine pairs} (\textit{same-person}): Hai ảnh cùng danh tính nhưng khác điều kiện ánh sáng, dùng để đo FRR.
-    \item \textbf{Impostor pairs} (\textit{different-person}): Hai ảnh khác danh tính, dùng để đo FAR.
+    \item Local: \texttt{D:\textbackslash face\_recognition\textbackslash aws\_edge\_benchmark\_results}
+    \item S3: \texttt{s3://face-edge-sim-380269593136-ap-southeast-1/aws-edge-benchmark/latest/}
 \end{itemize}
 
-\noindent Cặp được sinh sao cho mỗi tổ hợp điều kiện (bright-dark, bright-medium, v.v.) đều có đại diện, cho phép đánh giá hiệu năng theo từng cặp điều kiện chéo (\textit{cross-condition}).
+\subsection{File kết quả}
 
-\subsubsection{Hạn chế của tập dữ liệu}
-
-Chúng tôi nhận thức rõ hai hạn chế chính: (i) quy mô nhỏ (14 người, 104 ảnh gốc) giới hạn khả năng tổng quát hóa (\textit{generalizability}) của kết quả, và (ii) dữ liệu \texttt{medium} và \texttt{dark} hoàn toàn là tổng hợp, chưa phản ánh đầy đủ sự biến thiên tự nhiên của điều kiện ánh sáng thực tế (ví dụ: bóng đổ cục bộ, nguồn sáng đa hướng, ánh sáng nhấp nháy). Phần~\ref{sec:discussion} sẽ phân tích tác động của các hạn chế này đến tính hợp lệ (\textit{validity}) của kết luận.
-
-\subsection{Tập dữ liệu bổ sung}
-
-Để đánh giá tính tổng quát của phương pháp, chúng tôi bổ sung hai tập dữ liệu công khai.
-
-\textbf{XQLFW}~\cite{knoche2021xqlfw}: Cross-Quality LFW chứa các cặp same/different với chênh lệch chất lượng lớn, phù hợp để kiểm tra adaptive threshold trong kịch bản cross-quality.
-
-\textbf{DARK FACE}~\cite{yang2020darkface}: tập ảnh chụp ban đêm thực tế, được dùng để validate IQA pipeline trên dark images thật thay vì augmentation. Do DARK FACE là detection dataset và không có identity pairs, chúng tôi không báo cáo FRR/FAR trên tập này.
-
-\subsection{Giao thức đánh giá}
-
-\subsubsection{Mô hình trích xuất đặc trưng}
-
-Toàn bộ thực nghiệm sử dụng InsightFace \textit{buffalo\_sc} (backbone ArcFace, kích thước mô hình $\sim$30~MB) chạy trên CPU, không sử dụng GPU. Đây là mô hình nhỏ nhất trong bộ InsightFace model zoo, phù hợp với mục tiêu triển khai trên thiết bị biên.
-
-\subsubsection{Metrics đánh giá}
-
-Hiệu năng nhận diện được đánh giá bằng bốn metric chính, tính riêng cho từng bin điều kiện ánh sáng:
+Các bảng trong Mục~\ref{sec:results} được lấy từ các file CSV sau:
 
 \begin{itemize}
-    \item \textbf{FRR} (\textit{False Rejection Rate}): Tỷ lệ genuine pairs bị từ chối sai. Đây là metric quan trọng nhất trong bối cảnh chấm công, vì FRR cao trực tiếp ảnh hưởng đến trải nghiệm người dùng.
-    \item \textbf{FAR} (\textit{False Acceptance Rate}): Tỷ lệ impostor pairs được chấp nhận sai. FAR phản ánh mức độ an toàn của hệ thống.
-    \item \textbf{EER} (\textit{Equal Error Rate}): Điểm mà FRR $=$ FAR trên đường cong DET, dùng làm chỉ số tổng hợp.
-    \item \textbf{AUC-ROC}: Diện tích dưới đường cong ROC, đánh giá khả năng phân tách tổng thể không phụ thuộc ngưỡng.
+    \item \texttt{combined\_edge\_summary.csv}: tổng hợp theo method/profile.
+    \item \texttt{combined\_far\_budget\_summary.csv}: tổng hợp theo FAR budget và condition bin.
+    \item \texttt{combined\_calibration\_thresholds.csv}: ngưỡng accept/reject sau calibration.
 \end{itemize}
 
-\subsubsection{Kiểm định thống kê}
-
-Để đánh giá xem sự khác biệt giữa các chiến lược ngưỡng có ý nghĩa thống kê hay không, chúng tôi sử dụng \textbf{McNemar's test} so sánh từng cặp chiến lược trên tập genuine pairs ở điều kiện \texttt{dark} - bin có sự khác biệt lớn nhất giữa các phương pháp. Mức ý nghĩa được đặt ở $\alpha = 0{,}05$.
-
-\subsection{Các phương pháp so sánh}
-
-Bốn chiến lược ngưỡng được so sánh trong cùng điều kiện thực nghiệm, chỉ khác nhau ở cách tính $\tau$. Bảng~\ref{tab:baselines} tóm tắt các phương pháp.
-
-\begin{table}[h]
-\centering
-\caption{Bốn chiến lược ngưỡng quyết định được so sánh}
-\label{tab:baselines}
-\begin{tabular}{clp{7cm}}
-\toprule
-\textbf{ID} & \textbf{Tên} & \textbf{Công thức / Mô tả} \\
-\midrule
-F1 & Fixed       & $\tau = 0{,}44$ (mặc định InsightFace) \\
-F2 & Bin         & $\tau(b) \in \{0{,}48;\; 0{,}42;\; 0{,}35\}$ theo bin ánh sáng \\
-F3 & Linear      & $\tau(L, N) = 0{,}48 - 0{,}10(1-L) - 0{,}05N$ \\
-F4 & Interaction & $\tau_{\text{base}}(1-\gamma(1-L)N) \cdot q + \tau_{\text{floor}}(1-q)$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent Tất cả các chiến lược thích nghi (F2, F3, F4) được hiệu chỉnh (\textit{calibrate}) trên cùng một tập validation với ràng buộc $\text{FAR} \leq \text{FAR}_{\text{F1}} + 0{,}02$, đảm bảo so sánh công bằng về mức độ an toàn.
-
-\subsection{Giả lập thiết bị biên}
-
-Do hạn chế về thiết bị, thực nghiệm được thực hiện trên CPU Intel thông thường (cụ thể: [ghi rõ model CPU]) thay vì trên thiết bị biên thực tế. Mục tiêu hiệu năng được đặt theo thông số của Raspberry Pi 4B (8~GB RAM):
-
-\begin{itemize}
-    \item \textbf{Latency}: dưới 200~ms cho toàn bộ pipeline đầu cuối, bao gồm IQA, trích xuất embedding, tính ngưỡng, và tìm kiếm trong gallery.
-    \item \textbf{RAM}: dưới 512~MB peak memory usage.
-\end{itemize}
-
-\noindent Latency được đo qua \textbf{100 truy vấn liên tiếp} bằng thư viện \texttt{psutil}, báo cáo trung bình (\textit{mean}), độ lệch chuẩn (\textit{std}), và percentile thứ 95 (P95) để đánh giá cả hiệu năng trung bình lẫn trường hợp xấu (\textit{worst-case}). Cần lưu ý rằng kết quả trên CPU Intel sẽ khác với ARM trên Raspberry Pi; phần~\ref{sec:discussion} sẽ thảo luận về khoảng cách này.
+Trong báo cáo, kết quả nhận diện chính được trình bày trên profile \texttt{edge\_1cpu\_512mb} vì đây là cấu hình chặt nhất. Bảng profile riêng được dùng để so sánh độ trễ và RAM trên ba cấu hình AWS.

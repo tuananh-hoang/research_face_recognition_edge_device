@@ -1,47 +1,29 @@
 \section{Tổng quan tài liệu}
 
-\subsection{Nhận diện khuôn mặt dựa trên học biểu diễn sâu}
+\subsection{Nhận diện khuôn mặt trên thiết bị biên}
 
-Các phương pháp nhận diện khuôn mặt hiện đại hoạt động theo mô hình hai giai đoạn: (i) sử dụng mạng nơ-ron sâu để ánh xạ ảnh khuôn mặt vào không gian embedding có chiều thấp, và (ii) so sánh các vector embedding thông qua độ đo cosine similarity để đưa ra quyết định nhận diện. Chất lượng của không gian embedding quyết định trực tiếp hiệu năng hệ thống.
+Các hệ thống nhận diện khuôn mặt hiện đại thường dùng mạng học sâu để ánh xạ ảnh khuôn mặt vào không gian embedding, sau đó so sánh bằng cosine similarity. ArcFace~\cite{deng2019arcface} và CosFace~\cite{wang2018cosface} là hai phương pháp tiêu biểu giúp tăng độ phân tách giữa các danh tính trong không gian đặc trưng. Tuy nhiên, mô hình có độ chính xác cao trên benchmark chưa đảm bảo phù hợp với thiết bị biên, nơi CPU, RAM và năng lượng đều bị giới hạn.
 
-ArcFace~\cite{deng2019arcface} là một trong những phương pháp tiêu biểu nhất cho giai đoạn (i), sử dụng hàm mất mát \textit{additive angular margin} để tối đa hóa khoảng cách góc giữa các lớp danh tính trong không gian embedding. Cùng hướng tiếp cận, CosFace~\cite{wang2018cosface} áp dụng \textit{additive cosine margin} với mục tiêu tương tự. Cả hai phương pháp đều đạt kết quả xuất sắc trên các benchmark chuẩn (LFW > 99,8\%~\cite{huang2008labeled}), tuy nhiên đều được tối ưu cho ảnh đầu vào chất lượng cao và \textbf{không có cơ chế thích nghi tại thời điểm suy luận} khi chất lượng ảnh suy giảm do yếu tố môi trường.
+MobileFaceNet~\cite{chen2018mobilefacenets} được thiết kế cho xác minh khuôn mặt thời gian thực trên thiết bị di động bằng cách giảm kích thước và chi phí tính toán của backbone. Trong nghiên cứu này, chúng tôi dùng gói InsightFace \textit{buffalo\_sc}, trong đó mô hình nhận diện \textit{w600k\_mbf} mang phong cách MobileFaceNet, phù hợp hơn cho mô phỏng edge so với các backbone lớn. Tuy vậy, mô hình nhẹ chỉ giải quyết một phần bài toán; hệ thống vẫn cần cơ chế ra quyết định phù hợp khi điều kiện môi trường thay đổi.
 
-\subsection{Nhận diện khuôn mặt nhận biết chất lượng}
+\subsection{Nhận diện trong môi trường suy giảm}
 
-Nhận thấy hạn chế trên, một số nghiên cứu đã tích hợp thông tin chất lượng ảnh vào quá trình nhận diện theo các hướng tiếp cận khác nhau.
+Ảnh khuôn mặt trong vận hành thực tế thường bị suy giảm do thiếu sáng, nhiễu cảm biến, mờ chuyển động, nén ảnh hoặc sai lệch góc nhìn. Các bộ dữ liệu và nghiên cứu về ảnh chất lượng thấp cho thấy chất lượng đầu vào ảnh hưởng trực tiếp đến embedding và phân bố điểm tương đồng~\cite{knoche2021xqlfw,yang2020darkface}. Khi genuine scores dịch xuống, một ngưỡng cố định có thể làm FRR tăng. Ngược lại, nếu chỉ hạ ngưỡng để bù cho ảnh tối thì impostor scores cũng dễ vượt ngưỡng hơn, làm FAR tăng.
 
-\textbf{Thích nghi trong quá trình huấn luyện.} AdaFace~\cite{kim2022adaface} đề xuất sử dụng feature norm $\|\mathbf{z}\|_2$ làm proxy cho chất lượng ảnh, từ đó xây dựng \textit{adaptive margin} trong hàm mất mát: ảnh chất lượng thấp được gán margin nhỏ hơn để giảm tác động tiêu cực lên quá trình tối ưu. Mặc dù hiệu quả trên benchmark hỗn hợp, AdaFace yêu cầu huấn luyện lại (\textit{retraining}) khi gặp điều kiện triển khai mới, điều không khả thi trong bài toán thực tế khi điều kiện ánh sáng thay đổi liên tục theo địa điểm và ca làm việc.
+Một số hướng nghiên cứu đưa chất lượng ảnh vào quá trình học hoặc đánh giá. AdaFace~\cite{kim2022adaface} dùng feature norm như một tín hiệu chất lượng để điều chỉnh margin trong huấn luyện. SER-FIQ~\cite{terhorst2020serfiq} ước tính chất lượng ảnh dựa trên độ ổn định embedding. Các phương pháp này hữu ích nhưng không trực tiếp trả lời câu hỏi vận hành tại edge: với một ngân sách FAR cho phép, nên chọn ngưỡng và quyết định như thế nào cho từng điều kiện đầu vào?
 
-\textbf{Ước tính chất lượng không giám sát.} SER-FIQ~\cite{terhorst2020serfiq} đề xuất ước tính chất lượng ảnh dựa trên độ ổn định của embedding khi sử dụng các \textit{random subnetwork} khác nhau của cùng một mô hình, không yêu cầu nhãn chất lượng (\textit{quality label}). Ảnh chất lượng cao cho embedding ổn định (phương sai thấp), trong khi ảnh chất lượng thấp cho embedding dao động mạnh. Tuy nhiên, SER-FIQ chỉ dừng ở việc tính điểm chất lượng (\textit{quality score}) mà \textbf{không liên kết trực tiếp vào cơ chế ra quyết định ngưỡng} tại thời điểm suy luận.
+\subsection{Hiệu chỉnh ngưỡng và trade-off FAR/FRR}
 
-\subsection{Ngưỡng quyết định thích nghi tại thời điểm suy luận}
+Trong sinh trắc học, FAR và FRR là hai đại lượng trung tâm để đánh giá điểm vận hành của hệ thống~\cite{jain2004biometric}. Ngưỡng càng cao thì FAR thường giảm nhưng FRR tăng; ngưỡng càng thấp thì FRR giảm nhưng FAR tăng. Do đó, việc báo cáo ``độ chính xác'' chung là chưa đủ cho bài toán kiểm soát ra/vào, nơi lỗi chấp nhận sai có chi phí an ninh khác với lỗi từ chối sai.
 
-Hướng tiếp cận thứ ba tác động trực tiếp vào giai đoạn ra quyết định (ii) bằng cách điều chỉnh ngưỡng thay vì thay đổi mô hình embedding.
+Các phương pháp ngưỡng thích nghi đã được nghiên cứu theo hướng từng danh tính hoặc từng điều kiện dữ liệu. Ví dụ, Chou và Wang~\cite{chou2018adaptive} đề xuất ngưỡng thích nghi theo dữ liệu cho xác thực khuôn mặt. Tuy nhiên, nếu ngưỡng được chọn mà không ràng buộc FAR rõ ràng, phương pháp có thể vô tình đổi FRR thấp lấy FAR cao. Báo cáo này đặt lại vấn đề theo hướng risk-constrained: ngưỡng chỉ được chấp nhận nếu thỏa mãn FAR budget trên tập calibration.
 
-Chou et al.~\cite{chou2018adaptive} đề xuất ngưỡng thích nghi theo từng danh tính (\textit{identity-specific threshold}): mỗi người trong gallery được gán một ngưỡng riêng dựa trên phân bố similarity của các mẫu đăng ký. Phương pháp này cải thiện accuracy so với ngưỡng cố định, tuy nhiên có hai hạn chế quan trọng: (i) không xét đến tín hiệu điều kiện môi trường như độ sáng hay độ nhiễu của ảnh truy vấn (\textit{probe image}), và (ii) chi phí tính toán ngưỡng theo từng danh tính tăng tuyến tính với kích thước gallery, gây khó khăn cho triển khai thời gian thực trên thiết bị biên.
+\subsection{Reject option và defer decision}
+
+Trong phân loại có lựa chọn từ chối, hệ thống không buộc phải dự đoán cho mọi mẫu; nó có thể từ chối tự động hóa khi độ tin cậy thấp~\cite{chow1970optimum,geifman2017selective}. Ý tưởng này phù hợp với kiểm soát ra/vào: một mẫu không chắc chắn không nên tự động được chấp nhận, nhưng cũng không nhất thiết phải bị từ chối vĩnh viễn. Nó có thể được chuyển sang xác minh thêm bằng mã PIN, thẻ, nhân viên bảo vệ hoặc chụp lại ảnh.
+
+Nghiên cứu này đưa reject option vào bài toán xác minh khuôn mặt thông qua trạng thái \textit{defer}. Điểm mới không nằm ở việc chỉ thêm một nhãn đầu ra, mà ở cách kết hợp defer với ngưỡng được hiệu chỉnh theo FAR budget và đường xử lý có điều kiện theo môi trường. Nhờ đó, hệ thống báo cáo rõ tỷ lệ tự động hóa (\textit{automation rate}) thay vì che giấu các trường hợp khó.
 
 \subsection{Khoảng trống nghiên cứu}
 
-Bảng~\ref{tab:related} tổng hợp bốn tiêu chí then chốt mà một hệ thống nhận diện khuôn mặt thích nghi trong triển khai thực tế cần đáp ứng đồng thời: (i) thích nghi tại thời điểm suy luận, (ii) sử dụng tín hiệu môi trường, (iii) không yêu cầu huấn luyện lại, và (iv) khả thi trên thiết bị biên.
-
-\begin{table}[h]
-\centering
-\caption{So sánh các hướng tiếp cận liên quan theo bốn tiêu chí triển khai thực tế}
-\label{tab:related}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Phương pháp} & \textbf{Inference-time} & \textbf{Env. signal} & \textbf{No retrain} & \textbf{Edge} \\
-\midrule
-ArcFace~\cite{deng2019arcface}       & \textcolor{badred}{\texttimes}    & \textcolor{badred}{\texttimes}    & \textcolor{badred}{\texttimes}    & \textcolor{goodgreen}{\checkmark} \\
-AdaFace~\cite{kim2022adaface}        & \textcolor{badred}{\texttimes}    & \textcolor{badred}{\texttimes}    & \textcolor{badred}{\texttimes}    & \textcolor{badred}{\texttimes}    \\
-SER-FIQ~\cite{terhorst2020serfiq}    & \textcolor{goodgreen}{\checkmark} & \textcolor{badred}{\texttimes}    & \textcolor{goodgreen}{\checkmark} & \textcolor{badred}{\texttimes}    \\
-Chou et al.~\cite{chou2018adaptive}  & \textcolor{goodgreen}{\checkmark} & \textcolor{badred}{\texttimes}    & \textcolor{goodgreen}{\checkmark} & \textcolor{badred}{\texttimes}    \\
-\midrule
-\textbf{Nghiên cứu này}              & \textcolor{goodgreen}{\checkmark} & \textcolor{goodgreen}{\checkmark} & \textcolor{goodgreen}{\checkmark} & \textcolor{goodgreen}{\checkmark} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Như bảng cho thấy, chưa có nghiên cứu nào kết hợp đồng thời cả bốn tiêu chí: sử dụng tín hiệu môi trường $(L, N)$ để điều chỉnh ngưỡng quyết định tại thời điểm suy luận, không yêu cầu huấn luyện lại mô hình embedding, và triển khai được trên thiết bị biên. Nghiên cứu này nhắm đến việc lấp đầy khoảng trống đó.
-
-Ngoài ra, cần lưu ý rằng ArcFace trong bảng được đánh giá với vai trò là một hệ thống hoàn chỉnh sử dụng ngưỡng cố định (cách triển khai phổ biến nhất), chứ không chỉ với vai trò backbone embedding. Với cách đánh giá này, ArcFace đáp ứng tiêu chí Edge (mô hình \textit{buffalo\_sc} đủ nhẹ cho thiết bị biên) nhưng không thích nghi được theo điều kiện môi trường.
+Các hướng liên quan thường tập trung vào một trong ba phần: mô hình embedding nhẹ, xử lý ảnh suy giảm, hoặc ngưỡng quyết định. Khoảng trống mà báo cáo này nhắm tới là kết hợp cả ba trong một giao thức đánh giá có ràng buộc rủi ro: chọn đường xử lý theo điều kiện đầu vào, hiệu chỉnh ngưỡng để FAR không vượt ngân sách, và defer các trường hợp không chắc chắn. Cách đánh giá này phù hợp hơn với triển khai biên so với kết luận đơn giản rằng ảnh tối nên dùng ngưỡng thấp hơn.

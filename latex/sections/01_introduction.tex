@@ -2,34 +2,33 @@
 
 \subsection{Bối cảnh và động lực}
 
-Nhận diện khuôn mặt (\textit{face recognition}) là một trong những bài toán thị giác máy tính được nghiên cứu sâu rộng nhất trong thập kỷ qua. Các phương pháp dựa trên học sâu, tiêu biểu là ArcFace~\cite{deng2019arcface} và CosFace~\cite{wang2018cosface}, đã đạt độ chính xác vượt 99\% trên benchmark LFW~\cite{huang2008labeled} trong điều kiện phòng thí nghiệm kiểm soát. Tuy nhiên, báo cáo đánh giá FRVT của NIST~\cite{grother2019face} chỉ ra rằng khoảng cách giữa hiệu năng trên benchmark và hiệu năng triển khai thực tế (\textit{lab-to-field gap}) vẫn còn đáng kể, đặc biệt khi chất lượng ảnh đầu vào bị suy giảm do yếu tố môi trường.
+Nhận diện khuôn mặt là một thành phần quen thuộc trong các hệ thống kiểm soát ra/vào tại công trường, nhà máy, kho bãi và khu vực làm việc 24/7. So với kiểm tra thủ công, xử lý tại thiết bị biên giúp giảm độ trễ truyền dữ liệu, hạn chế phụ thuộc vào kết nối mạng, và cho phép phản hồi ngay tại điểm kiểm soát. Các mô hình học sâu hiện đại như ArcFace~\cite{deng2019arcface} và CosFace~\cite{wang2018cosface} đã đạt độ chính xác cao trên benchmark chuẩn, nhưng khoảng cách giữa môi trường benchmark và vận hành thực tế vẫn đáng kể, đặc biệt khi ảnh đầu vào bị ảnh hưởng bởi ánh sáng yếu, nhiễu cảm biến, mờ chuyển động hoặc camera lắp đặt không ổn định~\cite{grother2019face}.
 
-Một trong những bài toán triển khai phổ biến là hệ thống chấm công bằng khuôn mặt (\textit{face attendance system}) tại nhà máy và văn phòng. Trong thực tế vận hành, các hệ thống này thường gặp vấn đề nghiêm trọng ở điều kiện ca đêm hoặc hành lang thiếu sáng: tỷ lệ từ chối sai (\textit{False Rejection Rate} - FRR) tăng cao, buộc nhân viên phải quay lại chấm công thủ công và làm giảm đáng kể giá trị thực tiễn của hệ thống. Vấn đề này không chỉ ảnh hưởng đến trải nghiệm người dùng mà còn gây mất niềm tin vào tính ổn định của giải pháp AI trong môi trường sản xuất.
+Trong triển khai thực tế, bài toán không chỉ là ``nhận diện ai'' mà còn là ``ra quyết định với mức rủi ro nào''. Nếu hệ thống dùng ngưỡng quyết định quá cao, tỷ lệ chấp nhận sai (\textit{False Acceptance Rate} -- FAR) giảm nhưng tỷ lệ từ chối sai (\textit{False Rejection Rate} -- FRR) tăng, làm người dùng hợp lệ bị từ chối. Nếu ngưỡng quá thấp, FRR giảm nhưng FAR tăng, nghĩa là người không hợp lệ có thể được chấp nhận. Vì vậy, cách diễn giải ``ảnh tối thì hạ threshold để dễ qua hơn'' không đủ an toàn cho hệ thống kiểm soát ra/vào.
 
-Nguyên nhân cốt lõi nằm ở cách tiếp cận phổ biến hiện nay: hầu hết các hệ thống triển khai sử dụng \textbf{ngưỡng quyết định cố định} (\textit{fixed decision threshold}) $\tau = 0{,}44$ cho mọi điều kiện môi trường. Trong khi đó, phân bố cosine similarity giữa các cặp ảnh cùng danh tính (\textit{genuine pairs}) dịch chuyển đáng kể khi chất lượng ảnh thay đổi: ảnh chụp trong điều kiện tối có similarity trung bình thấp hơn so với điều kiện sáng bình thường, dẫn đến nhiều cặp hợp lệ bị rơi dưới ngưỡng cố định và bị từ chối sai.
+Một vấn đề khác là giới hạn tài nguyên trên thiết bị biên. Khi ảnh tốt, một đường xử lý nhẹ có thể đủ để đáp ứng cả độ chính xác và độ trễ. Khi ảnh xấu, hệ thống có thể cần tiền xử lý bền vững hơn, đánh giá chất lượng, hoặc cơ chế ra quyết định thận trọng hơn. Tuy nhiên, thiết bị biên không thể luôn chạy pipeline mạnh nhất vì điều đó làm tăng độ trễ, bộ nhớ và chi phí tính toán. Do đó, mâu thuẫn cốt lõi là: điều kiện môi trường xấu đòi hỏi xử lý cẩn trọng hơn, nhưng tài nguyên biên lại giới hạn.
 
-Xuất phát từ thực trạng trên, nghiên cứu này đặt ra giả thuyết rằng việc \textbf{điều chỉnh ngưỡng quyết định theo điều kiện môi trường} tại thời điểm suy luận (\textit{inference-time adaptive thresholding}) có thể thu hẹp khoảng cách hiệu năng giữa các điều kiện ánh sáng mà không yêu cầu huấn luyện lại mô hình trích xuất đặc trưng.
+\subsection{Bài toán nghiên cứu}
 
-\subsection{Câu hỏi nghiên cứu}
+Nghiên cứu này xem nhận diện khuôn mặt trên thiết bị biên như một bài toán ra quyết định có kiểm soát rủi ro dưới điều kiện môi trường thay đổi. Với một ảnh truy vấn $x$, hệ thống trích xuất ngữ cảnh $C(x)$ gồm độ sáng, nhiễu và độ tin cậy phát hiện; chọn đường xử lý phù hợp; sau đó đưa ra quyết định chấp nhận, từ chối hoặc defer. Câu hỏi nghiên cứu chính là:
 
-Để kiểm chứng giả thuyết trên, nghiên cứu này đặt ra ba câu hỏi cụ thể, mỗi câu hỏi đi kèm tiêu chí đánh giá định lượng rõ ràng:
+\begin{quote}
+Tại cùng một mức FAR cho phép, phương pháp nào giảm FRR tốt hơn, đặc biệt trong điều kiện tối, trong khi vẫn giữ độ trễ và bộ nhớ phù hợp với mô phỏng thiết bị biên?
+\end{quote}
 
-\begin{itemize}
-    \item \textbf{H1} (\textit{Hiệu quả của ngưỡng thích nghi}): Ngưỡng quyết định thích nghi $\tau(C)$ theo điều kiện môi trường $C$ có thể giảm FRR ở điều kiện tối ít nhất 10\% (tuyệt đối) so với ngưỡng cố định, đồng thời giữ mức tăng FAR không vượt quá 2\% hay không?
+Cách đặt bài toán này khác với adaptive threshold đơn thuần. Ngưỡng không được hạ chỉ vì ảnh tối; ngưỡng được hiệu chỉnh trên tập calibration sao cho FAR không vượt quá ngân sách $\alpha$. Khi điểm nhận diện nằm trong vùng không chắc chắn, hệ thống có thể defer thay vì ép buộc accept/reject.
 
-    \item \textbf{H2} (\textit{Ổn định khi cập nhật gallery}): Cơ chế cập nhật gallery trực tuyến không cần nhãn (\textit{unsupervised online gallery update}) có cải thiện độ chính xác ở điều kiện tối theo thời gian mà không làm suy giảm độ chính xác ở điều kiện sáng hay không?
+\subsection{Đóng góp}
 
-    \item \textbf{H3} (\textit{Khả năng triển khai biên}): Toàn bộ pipeline - từ tiền xử lý, trích xuất đặc trưng, đến ra quyết định - có thể chạy trên thiết bị biên sử dụng CPU với độ trễ đầu cuối (\textit{end-to-end latency}) dưới 200~ms hay không?
-\end{itemize}
-
-\subsection{Đóng góp của nghiên cứu}
-
-Bài báo này có ba đóng góp chính:
+Báo cáo này có bốn đóng góp chính:
 
 \begin{enumerate}
-    \item \textbf{Khung thực nghiệm so sánh có hệ thống}: Thiết kế và thực hiện một nghiên cứu so sánh bốn dạng hàm ngưỡng quyết định - cố định, phân bin, tuyến tính, và tương tác - theo thứ tự tăng dần độ phức tạp. Toàn bộ thực nghiệm được đánh giá trên tập dữ liệu tự thu thập với embedding thực tế từ ArcFace (InsightFace \textit{buffalo\_sc}), đảm bảo tính tái lập (\textit{reproducibility}) của kết quả.
-
-    \item \textbf{Phát hiện thực nghiệm có giá trị thực tiễn}: Kết quả cho thấy ngưỡng phân bin đơn giản (\textit{bin-specific threshold}) đạt hiệu quả vượt trội so với các công thức tham số hóa phức tạp hơn trên tập dữ liệu hiện tại. Đây là một \textit{negative finding} quan trọng, gợi ý rằng với quy mô dữ liệu nhỏ, các phương pháp đơn giản có thể ổn định hơn so với các mô hình có nhiều tham số, từ đó định hướng cho việc lựa chọn chiến lược phù hợp trong triển khai thực tế.
-
-    \item \textbf{Metric đánh giá mới CP-BWT}: Đề xuất \textit{Condition-Partitioned Backward Transfer} (CP-BWT) để đo lường tính ổn định của hệ thống theo từng điều kiện ánh sáng sau khi cập nhật gallery. Khác với BWT truyền thống trong học liên tục (\textit{continual learning}) vốn đo theo task tuần tự, CP-BWT phân rã hiệu năng theo phân vùng điều kiện môi trường, phù hợp hơn cho bài toán nhận diện trong điều kiện thực tế.
+    \item \textbf{Khung ra quyết định risk-constrained}: chuyển từ ngưỡng thích nghi theo môi trường sang hiệu chỉnh ngưỡng theo FAR budget, giúp đặt yếu tố an toàn vào trung tâm của bài toán.
+    \item \textbf{Cơ chế accept/reject/defer}: bổ sung vùng không chắc chắn để hệ thống có thể yêu cầu xác minh thêm thay vì chấp nhận rủi ro khi score không đủ rõ ràng.
+    \item \textbf{Đánh giá theo FAR budget}: so sánh các phương pháp tại cùng mức rủi ro cho phép, sử dụng các chỉ số FAR\_active, FRR\_active, FRR khi tính defer của genuine như thất bại, defer rate và automation rate.
+    \item \textbf{Benchmark AWS edge-constrained}: chạy thực nghiệm với MobileFaceNet-style InsightFace trên AWS EC2 ARM, giới hạn CPU/RAM bằng Docker để mô phỏng ba cấu hình thiết bị biên.
 \end{enumerate}
+
+\subsection{Phạm vi}
+
+Thực nghiệm hiện tại là giao thức xác minh theo cặp (\textit{pair-based verification}), không phải nhận diện phiên đầy đủ (\textit{session-level identification}). Kết quả được báo cáo trên tập dữ liệu tùy chỉnh có 248 cặp hợp lệ sau bước sinh cặp và xử lý bằng mô hình. Benchmark AWS là mô phỏng có ràng buộc tài nguyên, không phải đo trực tiếp trên Raspberry Pi hoặc Jetson.
